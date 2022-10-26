@@ -118,8 +118,58 @@ void tcpListenProcess(int server_sock, long port, int n_bind)
     close(n_bind);
 }
 
+char fileName[] = "counter.txt";
+
+int counting_client()
+{
+    FILE *fptr = fopen(fileName, "a+");
+    if (fptr == NULL)
+    {
+        fptr = fopen(fileName, "w");
+        if (fptr == NULL)
+        {
+            printf("Error!\n");
+            exit(1);
+        }
+    }
+    char message[1024] = "";
+    int i = 0;
+    char ch;
+    do
+    {
+        ch = fgetc(fptr);
+        if (ch != EOF)
+            message[i] = ch;
+        i++;
+
+    } while (ch != EOF);
+    i++;
+    strcat(message, "i");
+    fprintf(fptr, "%s", message);
+    fclose(fptr);
+    fptr = fopen(fileName, "r");
+    if (fptr == NULL)
+    {
+        printf("err\n");
+        exit(1);
+    }
+    i = 0;
+    do
+    {
+        ch = fgetc(fptr);
+        // if (ch != EOF)
+        //     message[i] = ch;
+        i++;
+
+    } while (ch != EOF);
+    fclose(fptr);
+    // printf("count: %lu\n", sizeof(message));
+    return i - 2;
+}
+
 void tcpServer(char *iface, long port)
 {
+    fclose(fopen(fileName, "w"));
 
     int server_sock;
     struct sockaddr_in server_addr;
@@ -133,28 +183,90 @@ void tcpServer(char *iface, long port)
     }
     // printf("[+]TCP server socket created.\n");
 
-    memset(&server_addr, '\0', sizeof(server_addr));
+    struct hostent *host = gethostbyname (iface);
+    unsigned int server_address = *(unsigned long *) host->h_addr_list[0];
+    unsigned short server_port = port;
+
+    memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
-    server_addr.sin_port = port;
-    server_addr.sin_addr.s_addr = inet_addr(iface);
+    server_addr.sin_port = htons(server_port);
+    server_addr.sin_addr.s_addr =  server_address;
 
     n = bind(server_sock, (struct sockaddr *)&server_addr, sizeof(server_addr));
     while (n < 0)
     {
+        // printf("waiting server available\n");
         n = bind(server_sock, (struct sockaddr *)&server_addr, sizeof(server_addr));
         sleep(1);
         // printf("cb lg %ld\n", time(NULL));
     }
+    // printf("server available\n");
     // printf("[+]Bind to the port number: %ld\n", port);
-    int status = fork();
-    if (status > 0)
+    int client_sock;
+    socklen_t addr_size;
+    char buffer[1024];
+    struct sockaddr_in client_addr;
+    // int status = fork();
+    fork();
+    listen(server_sock, 5);
+    // printf("Listening...\n");
+
+    while (1)
     {
-        tcpListenProcess(server_sock, port, n);
+        addr_size = sizeof(client_addr);
+        client_sock = accept(server_sock, (struct sockaddr *)&client_addr, &addr_size);
+        // printf("[+]Client connected. %d\n", client_sock);
+
+        char host[4096];
+        void *raw_addr = &(client_addr.sin_addr); // Extract the address from the container
+        inet_ntop(AF_INET, raw_addr, host, 4096);
+        // client_connection_count = counting_client();
+        // printf("IPv4 %s\n", host);
+        int client_connection_count = counting_client();
+        printf("connection %d from ('%s, %ld)\n", client_connection_count, host, port);
+        int exit = 0;
+        while (1)
+        {
+            int close = 0;
+            bzero(buffer, 1024);
+            recv(client_sock, buffer, sizeof(buffer), 0);
+            printf("got message from ('%s', %ld)\n", host, port);
+            // printf("Client: %s", buffer);
+            if (strcmp(buffer, "goodbye\n") == 0)
+            {
+                close = 1;
+            }
+            if (strcmp(buffer, "farewell\n") == 0)
+            {
+                close = 1;
+            }
+            if (strcmp(buffer, "ok\n") == 0)
+            {
+                close = 1;
+            }
+            if (strcmp(buffer, "exit\n") == 0)
+            {
+                close = 1;
+                exit = 1;
+            }
+
+            answer(buffer);
+
+            // printf("Server: %s", buffer);
+            send(client_sock, buffer, strlen(buffer), 0);
+            if (close)
+            {
+                break;
+            }
+        }
+        close(client_sock);
+        // printf("[+]Client disconnected.\n\n");
+        if (exit)
+        {
+            break;
+        }
     }
-    else
-    {
-        tcpListenProcess(server_sock, port, n);
-    }
+    close(n);
 }
 
 void udpServer(char *iface, long port)
@@ -211,9 +323,9 @@ void udpServer(char *iface, long port)
             exit = 1;
         }
         answer(buffer);
-        // sendto(sockfd, (const char *)buffer, strlen(buffer),
-        //        MSG_CONFIRM, (const struct sockaddr *)&cliaddr,
-        //        len);
+        sendto(sockfd, (const char *)buffer, strlen(buffer),
+               MSG_CONFIRM, (const struct sockaddr *)&cliaddr,
+               len);
 
         if (exit)
         {
@@ -278,12 +390,20 @@ void tcpClient(char *host, long port)
     }
     // printf("[+]TCP server socket created.\n");
 
+    struct hostent *_host = gethostbyname (host);
+    unsigned int server_address = *(unsigned long *) _host->h_addr_list[0];
+    unsigned short server_port = port;
     memset(&addr, '\0', sizeof(addr));
     addr.sin_family = AF_INET;
-    addr.sin_port = port;
-    addr.sin_addr.s_addr = inet_addr(host);
+    addr.sin_port = htons(server_port);
+    addr.sin_addr.s_addr = server_address;
 
-    connect(sock, (struct sockaddr *)&addr, sizeof(addr));
+    int c = connect(sock, (struct sockaddr *)&addr, sizeof(addr));
+    if (c != 0) {
+        perror("cant connect ");
+        printf("code: %d\n", c);
+        abort();
+    }
     // printf("Connected to the server.\n");
 
     while (1)
@@ -352,9 +472,9 @@ void udpClient(char *host, long port)
         {
         }
 
-        // sendto(sockfd, (const char *)hello, strlen(hello),
-        //        MSG_CONFIRM, (const struct sockaddr *)&servaddr,
-        //        sizeof(servaddr));
+        sendto(sockfd, (const char *)hello, strlen(hello),
+               MSG_CONFIRM, (const struct sockaddr *)&servaddr,
+               sizeof(servaddr));
         // printf("Hello message sent.\n");
 
         n = recvfrom(sockfd, (char *)buffer, MAXLINE,
