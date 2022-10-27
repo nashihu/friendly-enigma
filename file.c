@@ -30,7 +30,7 @@ void clearBuf(char *b)
 // function to encrypt
 char Cipher(char ch)
 {
-    return ch ^ cipherKey;
+    return ch;
 }
 
 // function sending file
@@ -59,7 +59,7 @@ int sendFile(FILE *fp, char *buf, int s)
     return 0;
 }
 
-int recvFile(char *buf, int s)
+int recvFile(FILE *fp, char *buf, int s)
 {
     int i;
     char ch;
@@ -68,9 +68,15 @@ int recvFile(char *buf, int s)
         ch = buf[i];
         ch = Cipher(ch);
         if (ch == EOF)
+        {
+            printf("\n");
             return 1;
+        }
         else
+        {
+            fprintf(fp, "%c", ch);
             printf("%c", ch);
+        }
     }
     return 0;
 }
@@ -89,17 +95,24 @@ int udpServerFile(char *iface, long port, int use_udp, FILE *fp)
     sockfd = socket(AF_INET, SOCK_DGRAM, IP_PROTOCOL);
 
     if (sockfd < 0)
-        printf("\nfile descriptor not received!!\n");
+    {
+        // printf("\nfile descriptor not received!!\n");
+    }
     else
-        printf("\nfile descriptor %d received\n", sockfd);
+    {
+        // printf("\nfile descriptor %d received\n", sockfd);
+    }
 
     // bind()
     if (bind(sockfd, (struct sockaddr *)&addr_con, sizeof(addr_con)) == 0)
-        printf("\nSuccessfully binded!\n");
+    {
+        // printf("\nSuccessfully binded!\n");
+    }
     else
-        printf("\nBinding Failed!\n");
-
-    printf("\nWaiting for file name...\n");
+    {
+        perror("\nBinding Failed!\n");
+        exit(EXIT_FAILURE);
+    }
 
     // receive file name
     clearBuf(net_buf);
@@ -107,19 +120,79 @@ int udpServerFile(char *iface, long port, int use_udp, FILE *fp)
     nBytes = recvfrom(sockfd, net_buf,
                       NET_BUF_SIZE, sendrecvflag,
                       (struct sockaddr *)&addr_con, &addrlen);
-    printf("berapa byte: %d\n", nBytes);
+    // printf("berapa byte: %d\n", nBytes);
 
-    fp = fopen(net_buf, "r");
-    printf("\nFile Name Received: %s\n", net_buf);
+    // printf("\nFile Name Received: %s\n", net_buf);
     if (fp == NULL)
+    {
         printf("\nFile open failed!\n");
+        exit(EXIT_FAILURE);
+    }
     else
-        printf("\nFile Successfully opened!\n");
+    {
+        // printf("\nFile Successfully opened!\n");
+    }
+    // bagian ini harusnya recvFile yah
+    //  TODO OK
+    while (1)
+    {
+        // receive
+        clearBuf(net_buf);
+        nBytes = recvfrom(sockfd, net_buf, NET_BUF_SIZE,
+                          sendrecvflag, (struct sockaddr *)&addr_con,
+                          &addrlen);
 
+        // process
+        if (recvFile(fp, net_buf, NET_BUF_SIZE))
+        {
+            break;
+        }
+    }
+    return 0;
+}
+
+void file_server(char *iface, long port, int use_udp, FILE *fp)
+{
+    udpServerFile(iface, port, use_udp, fp);
+}
+
+int udpClientFile(char *host, long port, int use_udp, FILE *fp)
+{
+    int sockfd;
+    struct sockaddr_in addr_con;
+    socklen_t addrlen = sizeof(addr_con);
+    addr_con.sin_family = AF_INET;
+    addr_con.sin_port = htons(PORT_NO);
+    addr_con.sin_addr.s_addr = inet_addr(IP_ADDRESS);
+    char net_buf[NET_BUF_SIZE];
+
+    // socket()
+    sockfd = socket(AF_INET, SOCK_DGRAM,
+                    IP_PROTOCOL);
+
+    if (sockfd < 0)
+    {
+        printf("\nfile descriptor not received!!\n");
+        exit(EXIT_FAILURE);
+    }
+    else
+    {
+        // printf("\nfile descriptor %d received\n", sockfd);
+    }
+
+    clearBuf(net_buf);
+    strcat(net_buf, "hoo.x");
+    sendto(sockfd, net_buf, NET_BUF_SIZE,
+           sendrecvflag, (struct sockaddr *)&addr_con,
+           addrlen);
+
+    // printf("\n---------Data Received---------\n");
+    int n = 0;
     while (1)
     {
 
         // process
+        printf("batch %d\n", ++n);
         if (sendFile(fp, net_buf, NET_BUF_SIZE))
         {
             sendto(sockfd, net_buf, NET_BUF_SIZE,
@@ -136,57 +209,7 @@ int udpServerFile(char *iface, long port, int use_udp, FILE *fp)
     }
     if (fp != NULL)
         fclose(fp);
-    return 0;
-}
-
-void file_server(char *iface, long port, int use_udp, FILE *fp)
-{
-    udpServerFile(iface, port, use_udp, fp);
-}
-
-int udpClientFile(char *host, long port, int use_udp, FILE *fp)
-{
-    int sockfd, nBytes;
-    struct sockaddr_in addr_con;
-    socklen_t addrlen = sizeof(addr_con);
-    addr_con.sin_family = AF_INET;
-    addr_con.sin_port = htons(PORT_NO);
-    addr_con.sin_addr.s_addr = inet_addr(IP_ADDRESS);
-    char net_buf[NET_BUF_SIZE];
-
-    // socket()
-    sockfd = socket(AF_INET, SOCK_DGRAM,
-                    IP_PROTOCOL);
-
-    if (sockfd < 0)
-        printf("\nfile descriptor not received!!\n");
-    else
-        printf("\nfile descriptor %d received\n", sockfd);
-
-    printf("\nPlease enter file name to receive:\n");
-    clearBuf(net_buf);
-    strcat(net_buf, "hoo.x");
-    sendto(sockfd, net_buf, NET_BUF_SIZE,
-           sendrecvflag, (struct sockaddr *)&addr_con,
-           addrlen);
-
-    printf("\n---------Data Received---------\n");
-
-    while (1)
-    {
-        // receive
-        clearBuf(net_buf);
-        nBytes = recvfrom(sockfd, net_buf, NET_BUF_SIZE,
-                          sendrecvflag, (struct sockaddr *)&addr_con,
-                          &addrlen);
-
-        // process
-        if (recvFile(net_buf, NET_BUF_SIZE))
-        {
-            break;
-        }
-    }
-    printf("\n-------------------------------\n");
+    // printf("\n-------------------------------\n");
     return 0;
 }
 
