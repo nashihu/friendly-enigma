@@ -12,9 +12,9 @@
 #include <unistd.h>
 
 #define IP_PROTOCOL 0
-#define PORT_NO 15050
-#define IP_ADDRESS "127.0.0.1" // localhost
-#define NET_BUF_SIZE 32
+// #define PORT_NO 15050
+// #define IP_ADDRESS "127.0.0.1" // localhost
+#define NET_BUF_SIZE 1
 #define cipherKey 'S'
 #define sendrecvflag 0
 #define nofile "File Not Found!"
@@ -27,8 +27,10 @@ void clearBuf(char *b)
         b[i] = '\0';
 }
 
-int min(int a, int b) {
-    if (a < b) return a;
+int min(int a, int b)
+{
+    if (a < b)
+        return a;
     return b;
 }
 
@@ -92,7 +94,7 @@ int udpServerFile(char *iface, long port, int use_udp, FILE *fp)
     struct sockaddr_in addr_con;
     socklen_t addrlen = sizeof(addr_con);
     addr_con.sin_family = AF_INET;
-    addr_con.sin_port = htons(PORT_NO);
+    addr_con.sin_port = htons(port);
     addr_con.sin_addr.s_addr = INADDR_ANY;
     char net_buf[NET_BUF_SIZE];
 
@@ -162,8 +164,8 @@ int udpClientFile(char *host, long port, int use_udp, FILE *fp)
     struct sockaddr_in addr_con;
     socklen_t addrlen = sizeof(addr_con);
     addr_con.sin_family = AF_INET;
-    addr_con.sin_port = htons(PORT_NO);
-    addr_con.sin_addr.s_addr = inet_addr(IP_ADDRESS);
+    addr_con.sin_port = htons(port);
+    addr_con.sin_addr.s_addr = inet_addr(host);
     char net_buf[NET_BUF_SIZE];
 
     // socket()
@@ -246,11 +248,11 @@ int sendfilee(int sock, FILE *f)
     rewind(f);
     if (filesize == EOF)
         return 0;
-    if (!sendlong(sock, filesize))
-        return 0;
+    // if (!sendlong(sock, filesize))
+    //     return 0;
     if (filesize > 0)
     {
-        char buffer[1024];
+        char buffer[1];
         do
         {
             size_t num = min(filesize, sizeof(buffer));
@@ -258,10 +260,16 @@ int sendfilee(int sock, FILE *f)
             if (num < 1)
                 return 0;
             if (!senddata(sock, buffer, num))
+            {
+                printf("any here?\n");
                 return 0;
+            }
             filesize -= num;
+            // printf("fsiz %ld\n", filesize);
         } while (filesize > 0);
     }
+    long endTransmission = 0;
+    sendlong(sock, endTransmission);
     return 1;
 }
 
@@ -272,7 +280,7 @@ int readdata(int sock, void *buf, int buflen)
     while (buflen > 0)
     {
         int num = recv(sock, pbuf, buflen, 0);
-        if (num < 0)
+        if (num <= 0)
         {
             return 0;
         }
@@ -294,12 +302,12 @@ int readlong(int sock, long *value)
 
 int readfile(int sock, FILE *f)
 {
-    long filesize;
-    if (!readlong(sock, &filesize))
-        return 0;
+    long filesize = 1;
+    // if (!readlong(sock, &filesize))
+    //     return 0;
     if (filesize > 0)
     {
-        char buffer[1024];
+        char buffer[1];
         do
         {
             int num = min(filesize, sizeof(buffer));
@@ -313,7 +321,11 @@ int readfile(int sock, FILE *f)
                     return 0;
                 offset += written;
             } while (offset < num);
-            filesize -= num;
+            // filesize -= num;
+            if (num < filesize)
+            {
+                filesize = num;
+            }
         } while (filesize > 0);
     }
     return 1;
