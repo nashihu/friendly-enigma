@@ -72,15 +72,15 @@ int send_data(int sock, void *buf, int buflen)
         // num = sendto(sock, pbuf, buflen,
         //                  sendrecvflag, (struct sockaddr *)&addr_cli,
         //                  adrlencli);
-                         printf("sent %d %d\n", ++x, num);
+                         printf("sent %d %d\n", ++x, buflen);
         if (num < 1)
         {
             perror("error send");
             return 0;
         }
 
-        pbuf += num;
-        buflen -= num;
+        pbuf += buflen;
+        buflen -= buflen;
     }
 
     return 1;
@@ -142,12 +142,12 @@ int read_data(int sock, void *buf, int buflen)
                            sizeof(Frame), sendrecvflag,
                            (struct sockaddr *)&addr_con, &adrlen);
         pbuf = frame_read.pbuf;
-        printf("dpt %d %d\n", ++x, fileSize);
         if (fileSize <= 0)
         {
             return 0;
         }
         fileSize = frame_read.length;
+        printf("dpt %d %d\n", ++x, fileSize);
         pbuf += fileSize;
         buflen -= fileSize;
     }
