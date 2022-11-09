@@ -64,12 +64,14 @@ int send_files(int sock, FILE *f)
     {
         do
         {
+            Frame fsend;
             char buffer[NET_BUF_SIZE];
             size_t num = mins(filesize, sizeof(buffer));
-            num = fread(buffer, 1, num, f);
+            num = fread(fsend.buffer, 1, num, f);
+            fsend.length = num;
             if (num < 1)
                 return 0;
-            sendto(sock, &buffer, num,
+            sendto(sock, &fsend, sizeof(Frame),
                              sendrecvflag, (struct sockaddr *)&addr_cli,
                              adrlencli);
             filesize -= num;
@@ -87,15 +89,16 @@ int read_file(int sock, FILE *f)
     int num = 0;
     while (1)
     {
-        char buffer[NET_BUF_SIZE];
-        num = recvfrom(sock, &buffer,
-                       NET_BUF_SIZE, sendrecvflag,
+        Frame fread;
+        // char buffer[NET_BUF_SIZE];
+        num = recvfrom(sock, &fread,
+                       sizeof(Frame), sendrecvflag,
                        (struct sockaddr *)&addr_con, &adrlen);
         if (num == 0)
         {
             return 0;
         }
-        fwrite(&buffer[0], 1, num, f);
+        fwrite(&fread.buffer[0], 1, fread.length, f);
     };
 }
 
