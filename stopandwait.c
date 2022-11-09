@@ -15,7 +15,7 @@
 #define IP_PROTOCOL 0
 // #define PORT_NO 15050
 // #define IP_ADDRESS "127.0.0.1" // localhost
-#define NET_BUF_SIZE 2048
+#define NET_BUF_SIZE 2155
 #define sendrecvflag 0
 #define nofile "File Not Found!"
 
@@ -70,11 +70,13 @@ int send_files(int sock, FILE *f)
             size_t num = mins(filesize, sizeof(buffer));
             num = fread(fsend.buffer, 1, num, f);
             fsend.length = num;
+            printf("iya ini len nya %d\n", fsend.length);
             if (num < 1)
                 return 0;
             sendto(sock, &fsend, sizeof(Frame),
                              sendrecvflag, (struct sockaddr *)&addr_cli,
                              adrlencli);
+            printf("sent %zu\n", num)   ;
             filesize -= num;
             // printf("fsiz %ld\n", filesize);
         } while (filesize > 0);
@@ -95,6 +97,7 @@ int read_file(int sock, FILE *f)
         num = recvfrom(sock, &fread,
                        sizeof(Frame), sendrecvflag,
                        (struct sockaddr *)&addr_con, &adrlen);
+        printf("recv %d\n", fread.length);
         if (num == 0)
         {
             return 0;
