@@ -36,6 +36,26 @@ typedef struct frame
 #define ACK 0
 #define SEQ 1
 
+int sockfd;
+int success;
+Frame fsend;
+Frame fresponse;
+void alarmHandler(int signum)
+{
+    alarm(3);
+    if (signum != 1)
+    {
+        printf("triggeren out of 1 %d\n", signum);
+    }
+    int dapet = sendto(sockfd, &fsend, sizeof(Frame),
+                       udpflag, (struct sockaddr *)&addr_cli,
+                       adrlencli);
+    printf("ini brp si %d\n", dapet);
+    recvfrom(sockfd, &fresponse, sizeof(Frame), udpflag,
+             (struct sockaddr *)&addr_cli, &adrlencli);
+    success = fresponse.ack == 1 && fresponse.frame_kind == ACK;
+}
+
 int checksum(char buffer[NET_BUF_SIZE])
 {
     int sum = 0;
@@ -62,6 +82,7 @@ int mins(int a, int b)
 
 int send_files(int sock, FILE *f)
 {
+    // sleep(2);
     fseek(f, 0, SEEK_END);
     long filesize = ftell(f);
     rewind(f);
@@ -73,9 +94,9 @@ int send_files(int sock, FILE *f)
     {
         do
         {
-            Frame fsend;
-            Frame fresponse;
-            int success = 0;
+            memset(&fsend, 0, sizeof(fsend));
+            memset(&fresponse, 0, sizeof(fresponse));
+            success = 0;
             int attempt = 0;
             char buffer[NET_BUF_SIZE];
             size_t num = mins(filesize, sizeof(buffer));
@@ -90,17 +111,12 @@ int send_files(int sock, FILE *f)
             step++;
             while (!success)
             {
-                sendto(sock, &fsend, sizeof(Frame),
-                       udpflag, (struct sockaddr *)&addr_cli,
-                       adrlencli);
+                alarmHandler(1);
                 attempt++;
                 if (attempt > 1)
                 {
                     printf("step %d done in %dth time\n", step, attempt);
                 }
-                recvfrom(sock, &fresponse, sizeof(Frame), udpflag,
-                         (struct sockaddr *)&addr_cli, &adrlencli);
-                success = fresponse.ack == 1 && fresponse.frame_kind == ACK;
             }
             printf("sent %zu %d\n", num, step);
             filesize -= num;
@@ -128,12 +144,15 @@ int read_file(int sock, FILE *f)
         int sum = checksum(fread.buffer);
         int isBuffer = fread.frame_kind == SEQ;
         int sumValid = fread.check_sum == sum;
-        int debug = 1; // rand() % 100 < 50;
+        int debug = 1; //rand() % 100 < 50;
         int isValid = debug && isBuffer && sumValid;
         if (!isValid)
         {
             ack = 0;
         }
+        // if (rand() % 3 < 1) {
+        //     sleep(4);
+        // }
         fresponse.ack = ack;
         fresponse.frame_kind = ACK;
         sendto(sock, &fresponse, sizeof(Frame), udpflag, (struct sockaddr *)&addr_con, adrlen);
@@ -176,8 +195,7 @@ int rdtServerFile(char *iface, long port, int use_udp, FILE *fp)
 
 int rdtClientFile(char *host, long port, int use_udp, FILE *fp)
 {
-    int sockfd;
-
+    signal(SIGALRM, alarmHandler);
     memset(&addr_cli, 0, sizeof(addr_cli));
     addr_cli.sin_family = AF_INET;
     addr_cli.sin_port = htons(port);
