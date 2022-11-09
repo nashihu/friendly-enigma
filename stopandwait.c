@@ -13,11 +13,8 @@
 #include <unistd.h>
 
 #define IP_PROTOCOL 0
-// #define PORT_NO 15050
-// #define IP_ADDRESS "127.0.0.1" // localhost
-#define NET_BUF_SIZE 2155
-#define sendrecvflag 0
-#define nofile "File Not Found!"
+#define NET_BUF_SIZE 200
+#define udpflag 0
 
 struct sockaddr_in addr_con;
 socklen_t adrlen = sizeof(addr_con);
@@ -25,16 +22,29 @@ socklen_t adrlen = sizeof(addr_con);
 struct sockaddr_in addr_cli;
 socklen_t adrlencli = sizeof(addr_cli);
 
-int x = 0;
-
 typedef struct frame
 {
     char buffer[NET_BUF_SIZE];
     int ack;
     int length;
-    int frame_kind; //ACK:0, SEQ:1 FIN:2
+    int frame_kind;
+    int seq_num;
+    int check_sum;
 } Frame;
 
+// framekind
+#define ACK 0
+#define SEQ 1
+
+int checksum(char buffer[NET_BUF_SIZE])
+{
+    int sum = 0;
+    for (int i = 0; i < NET_BUF_SIZE; i++)
+    {
+        sum += buffer[i];
+    }
+    return sum;
+}
 // function to clear buffer
 void clearBufs(char *b)
 {
@@ -50,7 +60,6 @@ int mins(int a, int b)
     return b;
 }
 
-
 int send_files(int sock, FILE *f)
 {
     fseek(f, 0, SEEK_END);
@@ -58,51 +67,85 @@ int send_files(int sock, FILE *f)
     rewind(f);
     if (filesize == EOF)
         return 0;
-    // if (!sendzero(sock, filesize))
-    //     return 0;
-    printf("FILE SIZEW %lu\n", filesize);
+
+    int step = 0;
     if (filesize > 0)
     {
         do
         {
             Frame fsend;
+            Frame fresponse;
+            int success = 0;
+            int attempt = 0;
             char buffer[NET_BUF_SIZE];
             size_t num = mins(filesize, sizeof(buffer));
             num = fread(fsend.buffer, 1, num, f);
             fsend.length = num;
-            printf("iya ini len nya %d\n", fsend.length);
+            fsend.seq_num = step;
+            fsend.frame_kind = SEQ;
+            fsend.check_sum = checksum(fsend.buffer);
+
             if (num < 1)
                 return 0;
-            sendto(sock, &fsend, sizeof(Frame),
-                             sendrecvflag, (struct sockaddr *)&addr_cli,
-                             adrlencli);
-            printf("sent %zu\n", num)   ;
+            step++;
+            while (!success)
+            {
+                sendto(sock, &fsend, sizeof(Frame),
+                       udpflag, (struct sockaddr *)&addr_cli,
+                       adrlencli);
+                attempt++;
+                if (attempt > 1)
+                {
+                    printf("step %d done in %dth time\n", step, attempt);
+                }
+                recvfrom(sock, &fresponse, sizeof(Frame), udpflag,
+                         (struct sockaddr *)&addr_cli, &adrlencli);
+                success = fresponse.ack == 1 && fresponse.frame_kind == ACK;
+            }
+            printf("sent %zu %d\n", num, step);
             filesize -= num;
-            // printf("fsiz %ld\n", filesize);
         } while (filesize > 0);
     }
     sendto(sock, NULL, 0,
-                 sendrecvflag, (struct sockaddr *)&addr_cli,
-                 adrlencli);
+           udpflag, (struct sockaddr *)&addr_cli,
+           adrlencli);
     return 1;
 }
 
 int read_file(int sock, FILE *f)
 {
     int num = 0;
+    int step = 0;
     while (1)
     {
         Frame fread;
-        // char buffer[NET_BUF_SIZE];
+        Frame fresponse;
         num = recvfrom(sock, &fread,
-                       sizeof(Frame), sendrecvflag,
+                       sizeof(Frame), udpflag,
                        (struct sockaddr *)&addr_con, &adrlen);
         printf("recv %d\n", fread.length);
+        int ack = 1;
+        int sum = checksum(fread.buffer);
+        int isBuffer = fread.frame_kind == SEQ;
+        int sumValid = fread.check_sum == sum;
+        int debug = 1; // rand() % 100 < 50;
+        int isValid = debug && isBuffer && sumValid;
+        if (!isValid)
+        {
+            ack = 0;
+        }
+        fresponse.ack = ack;
+        fresponse.frame_kind = ACK;
+        sendto(sock, &fresponse, sizeof(Frame), udpflag, (struct sockaddr *)&addr_con, adrlen);
         if (num == 0)
         {
             return 0;
         }
-        fwrite(&fread.buffer[0], 1, fread.length, f);
+        if (step == fread.seq_num)
+        {
+            fwrite(&fread.buffer[0], 1, fread.length, f);
+            step++;
+        }
     };
 }
 
@@ -112,35 +155,20 @@ int rdtServerFile(char *iface, long port, int use_udp, FILE *fp)
     addr_con.sin_family = AF_INET;
     addr_con.sin_port = htons(port);
     addr_con.sin_addr.s_addr = INADDR_ANY;
-    char net_buf[NET_BUF_SIZE];
 
-    // socket()
     sockfd = socket(AF_INET, SOCK_DGRAM, IP_PROTOCOL);
 
     if (sockfd < 0)
     {
-        printf("\nfile descriptor not received!!\n");
-    }
-    else
-    {
-        // printf("\nfile descriptor %d received\n", sockfd);
+        perror("failed create socket");
     }
 
-    // bind()
-    if (bind(sockfd, (struct sockaddr *)&addr_con, sizeof(addr_con)) == 0)
-    {
-        // printf("\nSuccessfully binded!\n");
-    }
-    else
+    if (bind(sockfd, (struct sockaddr *)&addr_con, sizeof(addr_con)) != 0)
     {
         perror("\nBinding Failed!\n");
         exit(EXIT_FAILURE);
     }
 
-    // receive file name
-    clearBufs(net_buf);
-    // long sip = 0;
-    // readzero(sockfd, &sip);
     read_file(sockfd, fp);
     fclose(fp);
     return 0;
@@ -154,27 +182,17 @@ int rdtClientFile(char *host, long port, int use_udp, FILE *fp)
     addr_cli.sin_family = AF_INET;
     addr_cli.sin_port = htons(port);
     addr_cli.sin_addr.s_addr = INADDR_ANY;
-    // addr_cli.sin_addr.s_addr = inet_addr(host);
-    char net_buf[NET_BUF_SIZE];
 
-    // socket()
-    sockfd = socket(AF_INET, SOCK_DGRAM,
-                    IP_PROTOCOL);
+    sockfd = socket(AF_INET, SOCK_DGRAM, IP_PROTOCOL);
 
     if (sockfd < 0)
     {
-        printf("\nfile descriptor not received!!\n");
+        perror("failed create socket");
         exit(EXIT_FAILURE);
     }
-    else
-    {
-        // printf("\nfile descriptor %d received\n", sockfd);
-    }
 
-    clearBufs(net_buf);
-    send_files(sockfd, fp); // udp
+    send_files(sockfd, fp);
     fclose(fp);
-    // printf("\n-------------------------------\n");
     return 0;
 }
 
