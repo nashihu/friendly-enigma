@@ -88,9 +88,11 @@ int send_data(int sock, void *buf, int buflen)
 
 int sendzero(int sock, long value)
 {
-    value = htonl(value);
+    Frame frame_zero;
+    frame_zero.length = 0;
+    // value = htonl(value);
     int num;
-    num = sendto(sock, NULL, 0,
+    num = sendto(sock, &frame_zero, sizeof(Frame),
                          sendrecvflag, (struct sockaddr *)&addr_cli,
                          adrlencli);
     return num;
@@ -148,6 +150,10 @@ int read_data(int sock, void *buf, int buflen)
         }
         fileSize = frame_read.length;
         printf("dpt %d %d\n", ++x, fileSize);
+        if (fileSize <= 0)
+        {
+            return 0;
+        }
         pbuf += fileSize;
         buflen -= fileSize;
     }
@@ -155,19 +161,9 @@ int read_data(int sock, void *buf, int buflen)
     return 1;
 }
 
-int readzero(int sock, long *value)
-{
-    if (!read_data(sock, value, sizeof(value)))
-        return 0;
-    *value = ntohl(*value);
-    return 1;
-}
-
 int read_file(int sock, FILE *f)
 {
     long filesize = NET_BUF_SIZE;
-    // if (!readzero(sock, &filesize))
-    //     return 0;
     if (filesize > 0)
     {
         char buffer[NET_BUF_SIZE];
@@ -175,7 +171,7 @@ int read_file(int sock, FILE *f)
         {
             int num = mins(filesize, sizeof(buffer));
             if (!read_data(sock, buffer, num))
-                return 0;   
+                return 0;
             int offset = 0;
             do
             {
@@ -228,7 +224,6 @@ int rdtServerFile(char *iface, long port, int use_udp, FILE *fp)
     // receive file name
     clearBufs(net_buf);
     // long sip = 0;
-    // readzero(sockfd, &sip);
     read_file(sockfd, fp);
     fclose(fp);
     return 0;
