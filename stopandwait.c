@@ -32,6 +32,7 @@ typedef struct frame
     char buffer[NET_BUF_SIZE];
     int ack;
     int length;
+    int frame_kind; //ACK:0, SEQ:1 FIN:2
 } Frame;
 
 // function to clear buffer

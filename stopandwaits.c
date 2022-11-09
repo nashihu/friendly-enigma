@@ -1,4 +1,4 @@
-/*#include <stdio.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
@@ -19,7 +19,7 @@ typedef struct frame{
     Packet packet;
 }Frame;
 
-int main(int argc, char** argv){
+int mains(int argc, char** argv){
 
 	if (argc != 2){
 		printf("Usage: %s <port>", argv[0]);
@@ -29,7 +29,7 @@ int main(int argc, char** argv){
 	int port = atoi(argv[1]);
 	int sockfd;
 	struct sockaddr_in serverAddr, newAddr;
-	char buffer[1024];
+	// char buffer[1024];
 	socklen_t addr_size;
 
 	int frame_id=0;
@@ -65,7 +65,7 @@ int main(int argc, char** argv){
 	close(sockfd);
 	return 0;
 }
-*/
+
 int yea() {
 	return 1;
 }
