@@ -29,7 +29,7 @@ int x = 0;
 
 typedef struct frame
 {
-    unsigned char *pbuf;
+    char buffer[NET_BUF_SIZE];
     int ack;
     int length;
 } Frame;
@@ -69,13 +69,9 @@ int send_files(int sock, FILE *f)
             num = fread(buffer, 1, num, f);
             if (num < 1)
                 return 0;
-            int res = sendto(sock, &buffer, num,
+            sendto(sock, &buffer, num,
                              sendrecvflag, (struct sockaddr *)&addr_cli,
                              adrlencli);
-            if (!res)
-            {
-                return 0;
-            }
             filesize -= num;
             // printf("fsiz %ld\n", filesize);
         } while (filesize > 0);
