@@ -2,6 +2,7 @@
     "files.associations": {
         "ratio": "c",
         "file.h": "c",
-        "netster.h": "c"
+        "netster.h": "c",
+        "time.h": "c"
     }
 }
