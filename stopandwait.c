@@ -11,6 +11,7 @@
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
+#include <signal.h>
 
 #define IP_PROTOCOL 0
 #define NET_BUF_SIZE 200

@@ -47,7 +47,8 @@ int mainz(int argc, char *argv[]){
 			frame_send.ack = 0;		
 	
 			printf("Enter Data: ");
-			scanf("%s", buffer);
+			int sip = scanf("%s", buffer);
+			printf("%d\n", sip);
 			strcpy(frame_send.packet.data, buffer);
 			sendto(sockfd, &frame_send, sizeof(Frame), 0, (struct sockaddr*)&serverAddr, sizeof(serverAddr));
 			printf("[+]Frame Send\n");
