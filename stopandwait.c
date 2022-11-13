@@ -172,9 +172,11 @@ int read_file(int sock, FILE *f)
 int rdtServerFile(char *iface, long port, FILE *fp)
 {
     int sockfd;
+    memset(&clientAddr, 0, sizeof(clientAddr));
+    memset(&serverAddr, 0, sizeof(serverAddr));
     serverAddr.sin_family = AF_INET;
     serverAddr.sin_port = htons(port);
-    serverAddr.sin_addr.s_addr = inet_addr(iface);
+    serverAddr.sin_addr.s_addr = INADDR_ANY;
 
     sockfd = socket(AF_INET, SOCK_DGRAM, IP_PROTOCOL);
 
@@ -200,7 +202,7 @@ int rdtClientFile(char *host, long port, FILE *fp)
     memset(&clientAddr, 0, sizeof(clientAddr));
     clientAddr.sin_family = AF_INET;
     clientAddr.sin_port = htons(port);
-    clientAddr.sin_addr.s_addr = inet_addr(host);
+    clientAddr.sin_addr.s_addr = INADDR_ANY;
 
     sockfdc = socket(AF_INET, SOCK_DGRAM, IP_PROTOCOL);
 
