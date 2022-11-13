@@ -15,7 +15,9 @@
 
 #define IP_PROTOCOL 0
 #define NET_BUF_SIZE 200
-#define udpflag 0
+#ifndef MSG_CONFIRM
+#define MSG_CONFIRM 0
+#endif
 
 struct sockaddr_in serverAddr;
 socklen_t serverAddrLen = sizeof(serverAddr);
@@ -49,10 +51,10 @@ void alarmHandler(int signum)
         printf("triggered out of 1 %d\n", signum);
     }
     int dapet = sendto(sockfdc, &fsend, sizeof(Frame),
-                       udpflag, (struct sockaddr *)&serverAddr,
+                       MSG_CONFIRM, (struct sockaddr *)&serverAddr,
                        serverAddrLen);
     printf("sent %d\n", dapet);
-    recvfrom(sockfdc, &fresponse, sizeof(Frame), udpflag,
+    recvfrom(sockfdc, &fresponse, sizeof(Frame), MSG_CONFIRM,
              (struct sockaddr *)&serverAddr, &serverAddrLen);
     success = fresponse.ack == 1 && fresponse.frame_kind == ACK;
 }
@@ -124,7 +126,7 @@ int send_files(int sock, FILE *f)
         } while (filesize > 0);
     }
     sendto(sock, NULL, 0,
-           udpflag, (struct sockaddr *)&serverAddr,
+           MSG_CONFIRM, (struct sockaddr *)&serverAddr,
            serverAddrLen);
     return 1;
 }
@@ -138,7 +140,7 @@ int read_file(int sock, FILE *f)
         Frame fread;
         Frame fresponse;
         num = recvfrom(sock, &fread,
-                       sizeof(Frame), udpflag,
+                       sizeof(Frame), MSG_CONFIRM,
                        (struct sockaddr *)&clientAddr, &clientAddrLen);
         printf("recv %d\n", fread.length);
         int ack = 1;
@@ -156,7 +158,7 @@ int read_file(int sock, FILE *f)
         // }
         fresponse.ack = ack;
         fresponse.frame_kind = ACK;
-        sendto(sock, &fresponse, sizeof(Frame), udpflag,
+        sendto(sock, &fresponse, sizeof(Frame), MSG_CONFIRM,
                (struct sockaddr *)&clientAddr, clientAddrLen);
         if (num == 0)
         {
