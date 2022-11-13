@@ -12,20 +12,19 @@
 #include <unistd.h>
 #include <signal.h>
 
+#define PORT 9000
+
 #define IP_PROTOCOL 0
 #define NET_BUF_SIZE 200
 #ifndef MSG_CONFIRM
 #define MSG_CONFIRM 0
 #endif
 
-struct sockaddr_in serverAddr;
-socklen_t serverAddrLen = sizeof(serverAddr);
+// struct sockaddr_in serverAddr;
+// socklen_t serverAddrLen = sizeof(serverAddr);
 
-struct sockaddr_in clientAddr;
-socklen_t clientAddrLen = sizeof(clientAddr);
-
-struct sockaddr_in serveAddr;
-socklen_t serveAddrLen = sizeof(serveAddr);
+// struct sockaddr_in clientAddr;
+// socklen_t clientAddrLen = sizeof(clientAddr);
 
 typedef struct frame
 {
@@ -45,8 +44,9 @@ int sockfdc;
 int success;
 Frame fsend;
 Frame fresponse;
-void alarmHandler(int signum)
-{
+void alarmHandler(int signum, struct sockaddr_in serverAddr)
+{   
+    socklen_t serverAddrLen = sizeof(serverAddr);
     alarm(1);
     if (signum != 1)
     {
@@ -85,7 +85,7 @@ int mins(int a, int b)
     return b;
 }
 
-int send_files(int sock, FILE *f)
+int send_files(int sock, FILE *f, struct sockaddr_in serverAddr)
 {
     // sleep(2);
     fseek(f, 0, SEEK_END);
@@ -116,7 +116,7 @@ int send_files(int sock, FILE *f)
             step++;
             while (!success)
             {
-                alarmHandler(1);
+                alarmHandler(1, serverAddr);
                 attempt++;
                 if (attempt > 1)
                 {
@@ -129,11 +129,11 @@ int send_files(int sock, FILE *f)
     }
     sendto(sock, NULL, 0,
            MSG_CONFIRM, (struct sockaddr *)&serverAddr,
-           serverAddrLen);
+           sizeof(serverAddr));
     return 1;
 }
 
-int read_file(int sock, FILE *f)
+int read_file(int sock, FILE *f, struct sockaddr_in clientAddr)
 {
     int num = 0;
     int step = 0;
@@ -141,6 +141,7 @@ int read_file(int sock, FILE *f)
     {
         Frame fread;
         Frame fresponse;
+        socklen_t clientAddrLen = sizeof(clientAddr);
         num = recvfrom(sock, &fread,
                        sizeof(Frame), MSG_CONFIRM,
                        (struct sockaddr *)&clientAddr, &clientAddrLen);
@@ -174,53 +175,96 @@ int read_file(int sock, FILE *f)
     };
 }
 
-int rdtServerFile(char *iface, long port, FILE *fp)
-{
+void rdtClientFile(char *host, long port, FILE *fp) {
+
+	// char buffer[NET_BUF_SIZE];
+	// char *hello = "Hello from client";
+	struct sockaddr_in	 servaddr;
+	
+	// Creating socket file descriptor
+	if ( (sockfdc = socket(AF_INET, SOCK_DGRAM, 0)) < 0 ) {
+		perror("socket creation failed");
+		exit(EXIT_FAILURE);
+	}
+	
+	memset(&servaddr, 0, sizeof(servaddr));
+		
+	// Filling server information
+	servaddr.sin_family = AF_INET;
+	servaddr.sin_port = htons(PORT);
+	servaddr.sin_addr.s_addr = INADDR_ANY;
+		
+	// int n, len;
+		
+	// sendto(sockfd, (const char *)hello, strlen(hello),
+	// 	MSG_CONFIRM, (const struct sockaddr *) &servaddr,
+	// 		sizeof(servaddr));
+	// printf("Hello message sent.\n");
+			
+	// n = recvfrom(sockfd, (char *)buffer, NET_BUF_SIZE,
+	// 			MSG_WAITALL, (struct sockaddr *) &servaddr,
+	// 			&len);
+	// buffer[n] = '\0';
+	// printf("Server : %s\n", buffer);
+
+    send_files(sockfdc, fp, servaddr);
+	
+	close(sockfdc);
+}
+
+void rdtServerFile(char *iface, long port, FILE *fp) {
+
     int sockfd;
-    memset(&clientAddr, 0, sizeof(clientAddr));
-    memset(&serveAddr, 0, sizeof(serveAddr));
-    serveAddr.sin_family = AF_INET;
-    serveAddr.sin_port = htons(port);
-    serveAddr.sin_addr.s_addr = INADDR_ANY;
-
-    sockfd = socket(AF_INET, SOCK_DGRAM, IP_PROTOCOL);
-
-    if (sockfd < 0)
-    {
-        perror("failed create socket");
-    }
-
-    if (bind(sockfd, (struct sockaddr *)&serveAddr, serveAddrLen) != 0)
-    {
-        perror("\nBinding Failed!\n");
-        exit(EXIT_FAILURE);
-    }
-
-    read_file(sockfd, fp);
-    fclose(fp);
-    return 0;
+	// char buffer[NET_BUF_SIZE];
+	// char *hello = "Hello from server";
+	struct sockaddr_in servaddr, cliaddr;
+		
+	// Creating socket file descriptor
+	if ( (sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0 ) {
+		perror("socket creation failed");
+		exit(EXIT_FAILURE);
+	}
+		
+	memset(&servaddr, 0, sizeof(servaddr));
+	memset(&cliaddr, 0, sizeof(cliaddr));
+		
+	// Filling server information
+	servaddr.sin_family = AF_INET; // IPv4
+	servaddr.sin_addr.s_addr = INADDR_ANY;
+	servaddr.sin_port = htons(PORT);
+		
+	// Bind the socket with the server address
+	if ( bind(sockfd, (const struct sockaddr *)&servaddr,
+			sizeof(servaddr)) < 0 )
+	{
+		perror("bind failed");
+		exit(EXIT_FAILURE);
+	}
+		
+	// int n;
+	// int len;
+	
+	// len = sizeof(cliaddr); //len is value/result
+	
+	// n = recvfrom(sockfd, (char *)buffer, NET_BUF_SIZE,
+	// 			MSG_WAITALL, ( struct sockaddr *) &cliaddr,
+	// 			&len);
+	// buffer[n] = '\0';
+	// printf("Client : %s\n", buffer);
+	// sendto(sockfd, (const char *)hello, strlen(hello),
+	// 	MSG_CONFIRM, (const struct sockaddr *) &cliaddr,
+	// 		len);
+	// printf("Hello message sent.\n");
+    read_file(sockfd, fp, servaddr);
 }
 
-int rdtClientFile(char *host, long port, FILE *fp)
-{
-    signal(SIGALRM, alarmHandler);
-    memset(&clientAddr, 0, sizeof(clientAddr));
-    clientAddr.sin_family = AF_INET;
-    clientAddr.sin_port = htons(port);
-    clientAddr.sin_addr.s_addr = INADDR_ANY;
-
-    sockfdc = socket(AF_INET, SOCK_DGRAM, IP_PROTOCOL);
-
-    if (sockfdc < 0)
-    {
-        perror("failed create socket");
-        exit(EXIT_FAILURE);
-    }
-
-    send_files(sockfdc, fp);
-    fclose(fp);
-    return 0;
-}
+// int main(int argc, char* argv[]) {
+//     if (argc > 1) {
+//         rdtServerFile();
+//     } else {
+//         rdtClientFile();
+//     }
+// }
 
 void stopandwait_server(char *iface, long port, FILE *fp)
 {
