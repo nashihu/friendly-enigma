@@ -1,4 +1,3 @@
-#include "file.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -24,6 +23,9 @@ socklen_t serverAddrLen = sizeof(serverAddr);
 
 struct sockaddr_in clientAddr;
 socklen_t clientAddrLen = sizeof(clientAddr);
+
+struct sockaddr_in serveAddr;
+socklen_t serveAddrLen = sizeof(serveAddr);
 
 typedef struct frame
 {
@@ -176,10 +178,10 @@ int rdtServerFile(char *iface, long port, FILE *fp)
 {
     int sockfd;
     memset(&clientAddr, 0, sizeof(clientAddr));
-    memset(&serverAddr, 0, sizeof(serverAddr));
-    serverAddr.sin_family = AF_INET;
-    serverAddr.sin_port = htons(port);
-    serverAddr.sin_addr.s_addr = INADDR_ANY;
+    memset(&serveAddr, 0, sizeof(serveAddr));
+    serveAddr.sin_family = AF_INET;
+    serveAddr.sin_port = htons(port);
+    serveAddr.sin_addr.s_addr = INADDR_ANY;
 
     sockfd = socket(AF_INET, SOCK_DGRAM, IP_PROTOCOL);
 
@@ -188,7 +190,7 @@ int rdtServerFile(char *iface, long port, FILE *fp)
         perror("failed create socket");
     }
 
-    if (bind(sockfd, (struct sockaddr *)&serverAddr, serverAddrLen) != 0)
+    if (bind(sockfd, (struct sockaddr *)&serveAddr, serveAddrLen) != 0)
     {
         perror("\nBinding Failed!\n");
         exit(EXIT_FAILURE);
