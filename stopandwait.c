@@ -126,7 +126,9 @@ int send_files(int sock, FILE *f, struct sockaddr_in serverAddr)
             filesize -= num;
         } while (filesize > 0);
     }
-    sendto(sock, NULL, 0,
+    memset(&fsend, 0, sizeof(Frame));
+    fsend.length = 0;
+    sendto(sock, &fsend, sizeof(Frame),
            MSG_CONFIRM, (struct sockaddr *)&serverAddr,
            sizeof(serverAddr));
     return 1;
@@ -162,7 +164,7 @@ int read_file(int sock, FILE *f, struct sockaddr_in clientAddr)
         fresponse.frame_kind = ACK;
         sendto(sock, &fresponse, sizeof(Frame), MSG_CONFIRM,
                (struct sockaddr *)&clientAddr, clientAddrLen);
-        if (num == 0)
+        if (fread.length == 0)
         {
             return 0;
         }
