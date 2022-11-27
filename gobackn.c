@@ -86,15 +86,27 @@ int _send_files(int sock, FILE *f, struct sockaddr_in serverAddr)
     int step = 0;
     if (filesize > 0)
     {
-        for (int i = 0; i < N_WINDOW; i++)
+        int i = 0;
+        do 
         {
-        }
+            size_t num = _min(filesize, sizeof(fsend[i].buffer));
+            num = fread(fsend[i].buffer, 1, num, f);
+            fsend[i].length = num;
+            fsend[i].seq_num = step;
+            fsend[i].frame_kind = SEQ;
+            fsend[i].check_sum = _checksum(fsend[i].buffer);
+
+            if (num < 1)
+                return 0;
+            alarmHandlerGbn(1, serverAddr, 0, i);
+            filesize -= num;
+        } while (filesize > 0 && i < N_WINDOW); //TODO asumsi filesize aman
+
         do
         {
             success = 0;
             int attempt = 0;
-            char buffer[NET_BUF_SIZE];
-            size_t num = _min(filesize, sizeof(buffer));
+            size_t num = _min(filesize, sizeof(fsend.buffer));
             num = fread(fsend.buffer, 1, num, f);
             fsend.length = num;
             fsend.seq_num = step;
