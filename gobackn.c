@@ -34,23 +34,27 @@ typedef struct frame
 
 int sockfdc;
 int success;
-Frame fsend;
+Frame fsend[N_WINDOW];
 Frame fresponse;
-void alarmHandlerGbn(int signum, struct sockaddr_in serverAddr)
+void alarmHandlerGbn(int signum, struct sockaddr_in serverAddr, int useAlarm, int i)
 {
     socklen_t serverAddrLen = sizeof(serverAddr);
-    alarm(1);
+    if (useAlarm)
+        alarm(1);
     if (signum != 1)
     {
         printf("triggered out of 1 %d\n", signum);
     }
-    int dapet = sendto(sockfdc, &fsend, sizeof(Frame),
+    int dapet = sendto(sockfdc, &fsend[i], sizeof(Frame),
                        MSG_CONFIRM, (struct sockaddr *)&serverAddr,
                        serverAddrLen);
     printf("sent %d\n", dapet);
-    recvfrom(sockfdc, &fresponse, sizeof(Frame), MSG_CONFIRM,
-             (struct sockaddr *)&serverAddr, &serverAddrLen);
-    success = fresponse.ack == 1 && fresponse.frame_kind == ACK;
+    if (useAlarm)
+    {
+        recvfrom(sockfdc, &fresponse, sizeof(Frame), MSG_CONFIRM,
+                 (struct sockaddr *)&serverAddr, &serverAddrLen);
+        success = fresponse.ack == 1 && fresponse.frame_kind == ACK;
+    }
 }
 
 int _checksum(char buffer[NET_BUF_SIZE])
@@ -82,10 +86,11 @@ int _send_files(int sock, FILE *f, struct sockaddr_in serverAddr)
     int step = 0;
     if (filesize > 0)
     {
+        for (int i = 0; i < N_WINDOW; i++)
+        {
+        }
         do
         {
-            memset(&fsend, 0, sizeof(fsend));
-            memset(&fresponse, 0, sizeof(fresponse));
             success = 0;
             int attempt = 0;
             char buffer[NET_BUF_SIZE];
