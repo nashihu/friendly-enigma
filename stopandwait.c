@@ -20,8 +20,8 @@
 #define MSG_CONFIRM 0
 #endif
 
-// struct sockaddr_in serverAddr;
-// socklen_t serverAddrLen = sizeof(serverAddr);
+struct sockaddr_in serverAddr;
+socklen_t serverAddrLen = sizeof(serverAddr);
 
 // struct sockaddr_in clientAddr;
 // socklen_t clientAddrLen = sizeof(clientAddr);
@@ -44,7 +44,7 @@ int sockfdc;
 int success;
 Frame fsend;
 Frame fresponse;
-void alarmHandler(int signum, struct sockaddr_in serverAddr)
+void alarmHandler(int signum)
 {
     socklen_t serverAddrLen = sizeof(serverAddr);
     alarm(1);
@@ -85,7 +85,7 @@ int mins(int a, int b)
     return b;
 }
 
-int send_files(int sock, FILE *f, struct sockaddr_in serverAddr)
+int send_files(int sock, FILE *f)
 {
     // sleep(2);
     fseek(f, 0, SEEK_END);
@@ -103,8 +103,7 @@ int send_files(int sock, FILE *f, struct sockaddr_in serverAddr)
             memset(&fresponse, 0, sizeof(fresponse));
             success = 0;
             int attempt = 0;
-            char buffer[NET_BUF_SIZE];
-            size_t num = mins(filesize, sizeof(buffer));
+            size_t num = mins(filesize, sizeof(fsend.buffer));
             num = fread(fsend.buffer, 1, num, f);
             fsend.length = num;
             fsend.seq_num = step;
@@ -116,7 +115,7 @@ int send_files(int sock, FILE *f, struct sockaddr_in serverAddr)
             step++;
             while (!success)
             {
-                alarmHandler(1, serverAddr);
+                alarmHandler(1);
                 attempt++;
                 if (attempt > 1)
                 {
@@ -181,7 +180,7 @@ void rdtClientFile(char *host, long port, FILE *fp)
 
     // char buffer[NET_BUF_SIZE];
     // char *hello = "Hello from client";
-    struct sockaddr_in servaddr;
+    // struct sockaddr_in servaddr;
 
     // Creating socket file descriptor
     if ((sockfdc = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
@@ -190,15 +189,15 @@ void rdtClientFile(char *host, long port, FILE *fp)
         exit(EXIT_FAILURE);
     }
 
-    memset(&servaddr, 0, sizeof(servaddr));
+    memset(&serverAddr, 0, sizeof(serverAddr));
 
     struct hostent *hoost = gethostbyname(host);
     unsigned int server_address = *(unsigned long *)hoost->h_addr_list[0];
 
     // Filling server information
-    servaddr.sin_family = AF_INET;
-    servaddr.sin_port = htons(PORT);
-    servaddr.sin_addr.s_addr = server_address;
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_port = htons(PORT);
+    serverAddr.sin_addr.s_addr = server_address;
 
     // int n, len;
 
@@ -213,7 +212,7 @@ void rdtClientFile(char *host, long port, FILE *fp)
     // buffer[n] = '\0';
     // printf("Server : %s\n", buffer);
 
-    send_files(sockfdc, fp, servaddr);
+    send_files(sockfdc, fp);
 
     close(sockfdc);
 }
@@ -281,5 +280,6 @@ void stopandwait_server(char *iface, long port, FILE *fp)
 
 void stopandwait_client(char *host, long port, FILE *fp)
 {
+    signal(SIGALRM, alarmHandler);
     rdtClientFile(host, port, fp);
 }
