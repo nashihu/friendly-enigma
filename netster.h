@@ -3,4 +3,5 @@
 #include "chat.h"
 #include "file.h"
 #include "stopandwait.h"
+#include "gobackn.h"
 #endif
