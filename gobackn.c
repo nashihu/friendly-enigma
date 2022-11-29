@@ -54,7 +54,7 @@ typedef struct frame
 #define ACK 0
 #define SEQ 1
 
-int sockfdc;
+int sockfdgbn;
 int success;
 int sequence;
 int lastSuccessIndex;
@@ -66,7 +66,7 @@ struct sockaddr_in serverAddr;
 int recvResponse(struct sockaddr_in serverAddr)
 {
     socklen_t serverAddrLen = sizeof(serverAddr);
-    recvfrom(sockfdc, &fresponse, sizeof(Frame), MSG_CONFIRM,
+    recvfrom(sockfdgbn, &fresponse, sizeof(Frame), MSG_CONFIRM,
              (struct sockaddr *)&serverAddr, &serverAddrLen);
     success = fresponse.ack == 1 && fresponse.frame_kind == ACK && fresponse.seq_num == sequence;
     if (success)
@@ -82,7 +82,7 @@ void sendDataChunk(struct sockaddr_in serverAddr, int useAlarm, int i)
     socklen_t serverAddrLen = sizeof(serverAddr);
     if (useAlarm)
         alarm(1);
-    int dapet = sendto(sockfdc, &fsend[i], sizeof(Frame),
+    int dapet = sendto(sockfdgbn, &fsend[i], sizeof(Frame),
                        MSG_CONFIRM, (struct sockaddr *)&serverAddr,
                        serverAddrLen);
     sdcLog++;
@@ -245,7 +245,7 @@ int _read_file(int sock, FILE *f, struct sockaddr_in clientAddr)
 void gbnClient(char *host, long port, FILE *fp)
 {
 
-    if ((sockfdc = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
+    if ((sockfdgbn = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
     {
         perror("socket creation failed");
         exit(EXIT_FAILURE);
@@ -260,9 +260,9 @@ void gbnClient(char *host, long port, FILE *fp)
     serverAddr.sin_port = htons(port);
     serverAddr.sin_addr.s_addr = server_address;
 
-    _send_files(sockfdc, fp, serverAddr);
+    _send_files(sockfdgbn, fp, serverAddr);
 
-    close(sockfdc);
+    close(sockfdgbn);
 }
 
 void gbnServer(char *iface, long port, FILE *fp)
