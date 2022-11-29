@@ -42,7 +42,7 @@ typedef struct frame
 
 int sockfdc;
 int successsaw;
-Frame fsend;
+Frame fsends;
 Frame fresponse;
 void alarmHandler(int signum, struct sockaddr_in serverAddr)
 {
@@ -52,7 +52,7 @@ void alarmHandler(int signum, struct sockaddr_in serverAddr)
     {
         printf("triggered out of 1 %d\n", signum);
     }
-    int dapet = sendto(sockfdc, &fsend, sizeof(Frame),
+    int dapet = sendto(sockfdc, &fsends, sizeof(Frame),
                        MSG_CONFIRM, (struct sockaddr *)&serverAddr,
                        serverAddrLen);
     printf("sent %d\n", dapet);
@@ -99,17 +99,17 @@ int send_files(int sock, FILE *f, struct sockaddr_in serverAddr)
     {
         do
         {
-            memset(&fsend, 0, sizeof(fsend));
+            memset(&fsends, 0, sizeof(fsends));
             memset(&fresponse, 0, sizeof(fresponse));
             successsaw = 0;
             int attempt = 0;
             char buffer[NET_BUF_SIZE];
             size_t num = mins(filesize, sizeof(buffer));
-            num = fread(fsend.buffer, 1, num, f);
-            fsend.length = num;
-            fsend.seq_num = step;
-            fsend.frame_kind = SEQ;
-            fsend.check_sum = checksum(fsend.buffer);
+            num = fread(fsends.buffer, 1, num, f);
+            fsends.length = num;
+            fsends.seq_num = step;
+            fsends.frame_kind = SEQ;
+            fsends.check_sum = checksum(fsends.buffer);
 
             if (num < 1)
                 return 0;
@@ -126,9 +126,9 @@ int send_files(int sock, FILE *f, struct sockaddr_in serverAddr)
             filesize -= num;
         } while (filesize > 0);
     }
-    memset(&fsend, 0, sizeof(Frame));
-    fsend.length = 0;
-    sendto(sock, &fsend, sizeof(Frame),
+    memset(&fsends, 0, sizeof(Frame));
+    fsends.length = 0;
+    sendto(sock, &fsends, sizeof(Frame),
            MSG_CONFIRM, (struct sockaddr *)&serverAddr,
            sizeof(serverAddr));
     return 1;
