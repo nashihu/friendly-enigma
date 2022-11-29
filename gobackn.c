@@ -53,6 +53,7 @@ typedef struct frame
 // framekind
 #define ACK 0
 #define SEQ 1
+#define FSZ 2
 
 int sockfdgbn;
 int success;
@@ -142,6 +143,15 @@ void sendDataAlarm(int signum)
     } while (filesize > 0 && i < N_WINDOW); // TODO asumsi filesize aman
 }
 
+void sendFileLength(long size) {
+    fsend[0].length = size;
+    fsend[0].frame_kind = FSZ;
+    success = 0;
+    while (!success) {
+        sendDataChunk(serverAddr, 1, 0);
+    }
+}
+
 int _send_files(int sock, FILE *f, struct sockaddr_in serverAddr)
 {
     // sleep(2);
@@ -154,6 +164,8 @@ int _send_files(int sock, FILE *f, struct sockaddr_in serverAddr)
 
     sequence = 0;
     lastSuccessIndex = 0;
+    int last = N_WINDOW - 1;
+    sendFileLength(filesize);
     while (filesize > 0)
     {
 
@@ -169,7 +181,6 @@ int _send_files(int sock, FILE *f, struct sockaddr_in serverAddr)
                 break;
             }
             slide();
-            int last = N_WINDOW - 1;
             memset(&fsend[last], 0, sizeof(Frame));
             size_t num = _min(filesize, sizeof(fsend[last].buffer));
             num = fread(fsend[last].buffer, 1, num, f);
@@ -190,11 +201,11 @@ int _send_files(int sock, FILE *f, struct sockaddr_in serverAddr)
             continue;
         }
     }
-    memset(&fsend[0], 0, sizeof(Frame));
-    fsend[0].length = 0;
-    sendto(sock, &fsend, sizeof(Frame),
-           MSG_CONFIRM, (struct sockaddr *)&serverAddr,
-           sizeof(serverAddr));
+    // memset(&fsend[last], 0, sizeof(Frame));
+    // fsend[last].length = 0;
+    // sendto(sock, &fsend, sizeof(Frame),
+    //        MSG_CONFIRM, (struct sockaddr *)&serverAddr,
+    //        sizeof(serverAddr));
     return 1;
 }
 
@@ -204,7 +215,7 @@ int _read_file(int sock, FILE *f, struct sockaddr_in clientAddr)
     int num = 0;
     int step = 0;
     int filesize = 0;
-    while (1)
+    do
     {
         Frame fread;
         Frame fresp;
@@ -212,9 +223,13 @@ int _read_file(int sock, FILE *f, struct sockaddr_in clientAddr)
         num = recvfrom(sock, &fread,
                        sizeof(Frame), MSG_CONFIRM,
                        (struct sockaddr *)&clientAddr, &clientAddrLen);
+        if (fread.frame_kind == FSZ) {
+            filesize = fread.length;
+            continue;
+        } 
         rfLog++;
         printf("recv %d %d %d\n", fread.length, num, (rfLog * NET_BUF_SIZE));
-        filesize += fread.length;
+        filesize -= fread.length;
         int ack = 1;
         int sum = _checksum(fread.buffer);
         int isBuffer = fread.frame_kind == SEQ;
@@ -232,14 +247,14 @@ int _read_file(int sock, FILE *f, struct sockaddr_in clientAddr)
         fresp.frame_kind = ACK;
         sendto(sock, &fresp, sizeof(Frame), MSG_CONFIRM,
                (struct sockaddr *)&clientAddr, clientAddrLen);
-        if (fread.length == 0)
+        if (filesize <= 0)
         {
-            printf("done %d\n", filesize);
+            printf("done\n");
             return 0;
         }
         fwrite(&fread.buffer[0], 1, fread.length, f);
         step++;
-    };
+    } while (1);
 }
 
 void gbnClient(char *host, long port, FILE *fp)
