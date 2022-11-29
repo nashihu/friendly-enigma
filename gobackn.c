@@ -92,7 +92,6 @@ void sendDataChunk(struct sockaddr_in serverAddr, int useAlarm, int i)
     {
         recvResponse(serverAddr);
     }
-    msleep(1);
 }
 
 int _checksum(char buffer[NET_BUF_SIZE])
