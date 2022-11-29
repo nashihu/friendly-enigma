@@ -85,6 +85,7 @@ void sendDataChunk(struct sockaddr_in serverAddr, int useAlarm, int i)
     int dapet = sendto(sockfdgbn, &fsend[i], sizeof(Frame),
                        MSG_CONFIRM, (struct sockaddr *)&serverAddr,
                        serverAddrLen);
+    //msleep(1);
     sdcLog++;
     // printf("sent %d %zu %d\n", dapet, time(NULL), (sdcLog * NET_BUF_SIZE));
     dapet++;
@@ -135,8 +136,12 @@ void sendDataAlarm(int signum)
 
         if (num < 1)
             return;
-        sendDataChunk(serverAddr, 0, i);
         filesize -= num;
+        int useAlarm = 1;
+        if (filesize == 0) {
+            useAlarm = 0;
+        }    
+        sendDataChunk(serverAddr, useAlarm, i);
         printf("%d %lu %zu\n", i, filesize, num);
         i++;
     } while (filesize > 0 && i < N_WINDOW); // TODO asumsi filesize aman
@@ -230,8 +235,12 @@ int _read_file(int sock, FILE *f, struct sockaddr_in clientAddr)
         // }
         fresp.ack = ack;
         fresp.frame_kind = ACK;
-        sendto(sock, &fresp, sizeof(Frame), MSG_CONFIRM,
+        if (0) {
+            printf("skipped\n");
+        } else {
+            sendto(sock, &fresp, sizeof(Frame), MSG_CONFIRM,
                (struct sockaddr *)&clientAddr, clientAddrLen);
+        }
         if (fread.length == 0)
         {
             printf("done %d\n", filesize);
