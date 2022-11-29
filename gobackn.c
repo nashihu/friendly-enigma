@@ -60,7 +60,7 @@ int sequence;
 int lastSuccessIndex;
 long filesize;
 FILE *ff;
-Frame fsend[N_WINDOW];
+Frame fsendgbn[N_WINDOW];
 Frame fresponse;
 struct sockaddr_in serverAddr;
 int recvResponse(struct sockaddr_in serverAddr)
@@ -82,7 +82,7 @@ void sendDataChunk(struct sockaddr_in serverAddr, int useAlarm, int i)
     socklen_t serverAddrLen = sizeof(serverAddr);
     if (useAlarm)
         alarm(1);
-    int dapet = sendto(sockfdgbn, &fsend[i], sizeof(Frame),
+    int dapet = sendto(sockfdgbn, &fsendgbn[i], sizeof(Frame),
                        MSG_CONFIRM, (struct sockaddr *)&serverAddr,
                        serverAddrLen);
     sdcLog++;
@@ -115,7 +115,7 @@ void slide()
 {
     for (int i = 1; i < N_WINDOW; i++)
     {
-        fsend[i] = fsend[i - 1];
+        fsendgbn[i] = fsendgbn[i - 1];
     }
 }
 
@@ -124,14 +124,14 @@ void sendDataAlarm(int signum)
     int i = lastSuccessIndex;
     do
     {
-        memset(&fsend[i], 0, sizeof(fsend[i]));
-        size_t num = _min(filesize, sizeof(fsend[i].buffer));
-        num = fread(fsend[i].buffer, 1, num, ff);
-        fsend[i].length = num;
-        fsend[i].seq_num = sequence;
+        memset(&fsendgbn[i], 0, sizeof(fsendgbn[i]));
+        size_t num = _min(filesize, sizeof(fsendgbn[i].buffer));
+        num = fread(fsendgbn[i].buffer, 1, num, ff);
+        fsendgbn[i].length = num;
+        fsendgbn[i].seq_num = sequence;
         sequence++;
-        fsend[i].frame_kind = SEQ;
-        fsend[i].check_sum = _checksum(fsend[i].buffer);
+        fsendgbn[i].frame_kind = SEQ;
+        fsendgbn[i].check_sum = _checksum(fsendgbn[i].buffer);
 
         if (num < 1)
             return;
@@ -170,13 +170,13 @@ int _send_files(int sock, FILE *f, struct sockaddr_in serverAddr)
             }
             slide();
             int last = N_WINDOW - 1;
-            memset(&fsend[last], 0, sizeof(Frame));
-            size_t num = _min(filesize, sizeof(fsend[last].buffer));
-            num = fread(fsend[last].buffer, 1, num, f);
-            fsend[last].length = num;
-            fsend[last].seq_num = sequence;
-            fsend[last].frame_kind = SEQ;
-            fsend[last].check_sum = _checksum(fsend[last].buffer);
+            memset(&fsendgbn[last], 0, sizeof(Frame));
+            size_t num = _min(filesize, sizeof(fsendgbn[last].buffer));
+            num = fread(fsendgbn[last].buffer, 1, num, f);
+            fsendgbn[last].length = num;
+            fsendgbn[last].seq_num = sequence;
+            fsendgbn[last].frame_kind = SEQ;
+            fsendgbn[last].check_sum = _checksum(fsendgbn[last].buffer);
 
             if (num < 1)
                 return 0;
@@ -190,9 +190,9 @@ int _send_files(int sock, FILE *f, struct sockaddr_in serverAddr)
             continue;
         }
     }
-    memset(&fsend[0], 0, sizeof(Frame));
-    fsend[0].length = 0;
-    sendto(sock, &fsend, sizeof(Frame),
+    memset(&fsendgbn[0], 0, sizeof(Frame));
+    fsendgbn[0].length = 0;
+    sendto(sock, &fsendgbn, sizeof(Frame),
            MSG_CONFIRM, (struct sockaddr *)&serverAddr,
            sizeof(serverAddr));
     return 1;
