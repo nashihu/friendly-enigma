@@ -138,9 +138,12 @@ void sendDataAlarm(int signum)
             return;
         sendDataChunk(serverAddr, 0, i);
         filesize -= num;
-        printf("%d %lu %zu\n", i, filesize, num);
+        printf("sent %d %lu %zu\n", i, filesize, num);
         i++;
-    } while (filesize > 0 && i < N_WINDOW); // TODO asumsi filesize aman
+        if (filesize <= 0) {
+            break;
+        }
+    } while (i < N_WINDOW); // TODO asumsi filesize aman
 }
 
 void sendFileLength(long size) {
@@ -172,6 +175,9 @@ int _send_files(int sock, FILE *f, struct sockaddr_in serverAddr)
         sendDataAlarm(1);
 
         int goback = 0;
+        if (filesize <= 0) {
+            return 1;
+        }
         do
         {
             recvResponse(serverAddr);
@@ -227,6 +233,11 @@ int _read_file(int sock, FILE *f, struct sockaddr_in clientAddr)
             filesize = fread.length;
             continue;
         } 
+        if (filesize <= 0)
+        {
+            printf("done\n");
+            return 0;
+        }
         rfLog++;
         printf("recv %d %d %d\n", fread.length, num, (rfLog * NET_BUF_SIZE));
         filesize -= fread.length;
@@ -247,11 +258,6 @@ int _read_file(int sock, FILE *f, struct sockaddr_in clientAddr)
         fresp.frame_kind = ACK;
         sendto(sock, &fresp, sizeof(Frame), MSG_CONFIRM,
                (struct sockaddr *)&clientAddr, clientAddrLen);
-        if (filesize <= 0)
-        {
-            printf("done\n");
-            return 0;
-        }
         fwrite(&fread.buffer[0], 1, fread.length, f);
         step++;
     } while (1);
