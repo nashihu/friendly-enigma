@@ -41,7 +41,7 @@ typedef struct frame
 #define SEQ 1
 
 int sockfdc;
-int success;
+int successsaw;
 Frame fsend;
 Frame fresponse;
 void alarmHandler(int signum, struct sockaddr_in serverAddr)
@@ -58,7 +58,7 @@ void alarmHandler(int signum, struct sockaddr_in serverAddr)
     printf("sent %d\n", dapet);
     recvfrom(sockfdc, &fresponse, sizeof(Frame), MSG_CONFIRM,
              (struct sockaddr *)&serverAddr, &serverAddrLen);
-    success = fresponse.ack == 1 && fresponse.frame_kind == ACK;
+    successsaw = fresponse.ack == 1 && fresponse.frame_kind == ACK;
 }
 
 int checksum(char buffer[NET_BUF_SIZE])
@@ -101,7 +101,7 @@ int send_files(int sock, FILE *f, struct sockaddr_in serverAddr)
         {
             memset(&fsend, 0, sizeof(fsend));
             memset(&fresponse, 0, sizeof(fresponse));
-            success = 0;
+            successsaw = 0;
             int attempt = 0;
             char buffer[NET_BUF_SIZE];
             size_t num = mins(filesize, sizeof(buffer));
@@ -114,7 +114,7 @@ int send_files(int sock, FILE *f, struct sockaddr_in serverAddr)
             if (num < 1)
                 return 0;
             step++;
-            while (!success)
+            while (!successsaw)
             {
                 alarmHandler(1, serverAddr);
                 attempt++;

@@ -61,17 +61,17 @@ int lastSuccessIndex;
 long filesize;
 FILE *ff;
 Frame fsendgbn[N_WINDOW];
-Frame fresponse;
+Frame fresp;
 struct sockaddr_in serverAddr;
 int recvResponse(struct sockaddr_in serverAddr)
 {
     socklen_t serverAddrLen = sizeof(serverAddr);
-    recvfrom(sockfdgbn, &fresponse, sizeof(Frame), MSG_CONFIRM,
+    recvfrom(sockfdgbn, &fresp, sizeof(Frame), MSG_CONFIRM,
              (struct sockaddr *)&serverAddr, &serverAddrLen);
-    success = fresponse.ack == 1 && fresponse.frame_kind == ACK && fresponse.seq_num == sequence;
+    success = fresp.ack == 1 && fresp.frame_kind == ACK && fresp.seq_num == sequence;
     if (success)
     {
-        lastSuccessIndex = fresponse.seq_num;
+        lastSuccessIndex = fresp.seq_num;
     }
     return success;
 }
@@ -207,7 +207,7 @@ int _read_file(int sock, FILE *f, struct sockaddr_in clientAddr)
     while (1)
     {
         Frame fread;
-        Frame fresponse;
+        Frame fresp;
         socklen_t clientAddrLen = sizeof(clientAddr);
         num = recvfrom(sock, &fread,
                        sizeof(Frame), MSG_CONFIRM,
@@ -228,9 +228,9 @@ int _read_file(int sock, FILE *f, struct sockaddr_in clientAddr)
         // if (rand() % 3 < 1) {
         //     sleep(4);
         // }
-        fresponse.ack = ack;
-        fresponse.frame_kind = ACK;
-        sendto(sock, &fresponse, sizeof(Frame), MSG_CONFIRM,
+        fresp.ack = ack;
+        fresp.frame_kind = ACK;
+        sendto(sock, &fresp, sizeof(Frame), MSG_CONFIRM,
                (struct sockaddr *)&clientAddr, clientAddrLen);
         if (fread.length == 0)
         {
