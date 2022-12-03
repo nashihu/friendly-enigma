@@ -47,10 +47,16 @@ Frame fresponse;
 void alarmHandler(int signum, struct sockaddr_in serverAddr)
 {
     socklen_t serverAddrLen = sizeof(serverAddr);
-    alarm(1);
     if (signum != 1)
     {
         printf("triggered out of 1 %d\n", signum);
+    }
+    struct timeval tv;
+    tv.tv_sec = 1;
+    tv.tv_usec = 0;
+    if (setsockopt(sockfdc, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
+    {
+        perror("Error");
     }
     int dapet = sendto(sockfdc, &fsends, sizeof(Frame),
                        MSG_CONFIRM, (struct sockaddr *)&serverAddr,
@@ -157,13 +163,18 @@ int read_file(int sock, FILE *f, struct sockaddr_in clientAddr)
         {
             ack = 0;
         }
-        // if (rand() % 3 < 1) {
-        //     sleep(4);
-        // }
         fresponse.ack = ack;
         fresponse.frame_kind = ACK;
-        sendto(sock, &fresponse, sizeof(Frame), MSG_CONFIRM,
-               (struct sockaddr *)&clientAddr, clientAddrLen);
+        if (0)
+        {
+            fread.seq_num = -1;
+        }
+        else
+        {
+            sendto(sock, &fresponse, sizeof(Frame), MSG_CONFIRM,
+                   (struct sockaddr *)&clientAddr, clientAddrLen);
+        }
+
         if (fread.length == 0)
         {
             return 0;
