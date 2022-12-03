@@ -21,33 +21,33 @@
 
 int msleep(long msec)
 {
-    struct timespec ts;
-    int res;
+	struct timespec ts;
+	int res;
 
-    if (msec < 0)
-    {
-        errno = EINVAL;
-        return -1;
-    }
+	if (msec < 0)
+	{
+		errno = EINVAL;
+		return -1;
+	}
 
-    ts.tv_sec = msec / 10;
-    ts.tv_nsec = (msec % 10) * 1000000;
+	ts.tv_sec = msec / 10;
+	ts.tv_nsec = (msec % 10) * 1000000;
 
-    do
-    {
-        res = nanosleep(&ts, &ts);
-    } while (res && errno == EINTR);
+	do
+	{
+		res = nanosleep(&ts, &ts);
+	} while (res && errno == EINTR);
 
-    return res;
+	return res;
 }
 typedef struct frame
 {
-    char buffer[NET_BUF_SIZE];
-    int ack;
-    int length;
-    int frame_kind;
-    int seq_num;
-    int check_sum;
+	char buffer[NET_BUF_SIZE];
+	int ack;
+	int length;
+	int frame_kind;
+	int seq_num;
+	int check_sum;
 } Frame;
 
 // framekind
@@ -65,251 +65,275 @@ Frame fresp;
 struct sockaddr_in serverAddr;
 int recvResponse(struct sockaddr_in serverAddr)
 {
-    socklen_t serverAddrLen = sizeof(serverAddr);
-    recvfrom(sockfdgbn, &fresp, sizeof(Frame), MSG_CONFIRM,
-             (struct sockaddr *)&serverAddr, &serverAddrLen);
-    success = fresp.ack == 1 && fresp.frame_kind == ACK && fresp.seq_num == sequence;
-    if (success)
-    {
-        lastSuccessIndex = fresp.seq_num;
-    }
-    return success;
+	socklen_t serverAddrLen = sizeof(serverAddr);
+	struct timeval tv;
+	tv.tv_sec = 1;
+	tv.tv_usec = 0;
+	if (setsockopt(sockfdgbn, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
+	{
+		perror("Error");
+	}
+	recvfrom(sockfdgbn, &fresp, sizeof(Frame), MSG_CONFIRM,
+			 (struct sockaddr *)&serverAddr, &serverAddrLen);
+	success = fresp.ack && fresp.frame_kind == ACK && fresp.seq_num == sequence;
+	printf("success %d %d %d %d\n", fresp.ack, fresp.frame_kind == ACK, fresp.seq_num, success);
+	// printf("got sec %d success %d\n", fresp.seq_num, success);
+	if (success)
+	{
+		lastSuccessIndex = fresp.seq_num;
+		if (lastSuccessIndex == 4) {
+			lastSuccessIndex = 0;
+		}
+	}
+	return success;
 }
 
 int sdcLog = 0;
 void sendDataChunk(struct sockaddr_in serverAddr, int useAlarm, int i)
 {
-    socklen_t serverAddrLen = sizeof(serverAddr);
-    if (useAlarm)
-        alarm(1);
-    int dapet = sendto(sockfdgbn, &fsend[i], sizeof(Frame),
-                       MSG_CONFIRM, (struct sockaddr *)&serverAddr,
-                       serverAddrLen);
-    //msleep(1);
-    sdcLog++;
-    // printf("sent %d %zu %d\n", dapet, time(NULL), (sdcLog * NET_BUF_SIZE));
-    dapet++;
-    if (useAlarm)
-    {
-        recvResponse(serverAddr);
-    }
+	socklen_t serverAddrLen = sizeof(serverAddr);
+	if (useAlarm)
+		alarm(1);
+	int dapet = sendto(sockfdgbn, &fsend[i], sizeof(Frame),
+					   MSG_CONFIRM, (struct sockaddr *)&serverAddr,
+					   serverAddrLen);
+	// msleep(1);
+	sdcLog++;
+	// printf("sent %d %zu %d\n", dapet, time(NULL), (sdcLog * NET_BUF_SIZE));
+	dapet++;
+	if (useAlarm)
+	{
+		recvResponse(serverAddr);
+	}
 }
 
 int _checksum(char buffer[NET_BUF_SIZE])
 {
-    int sum = 0;
-    for (int i = 0; i < NET_BUF_SIZE; i++)
-    {
-        sum += buffer[i];
-    }
-    return sum;
+	int sum = 0;
+	for (int i = 0; i < NET_BUF_SIZE; i++)
+	{
+		sum += buffer[i];
+	}
+	return sum;
 }
 
 int _min(int a, int b)
 {
-    if (a < b)
-        return a;
-    return b;
+	if (a < b)
+		return a;
+	return b;
 }
 
 void slide()
 {
-    for (int i = 1; i < N_WINDOW; i++)
-    {
-        fsend[i] = fsend[i - 1];
-    }
+	for (int i = 1; i < N_WINDOW; i++)
+	{
+		fsend[i] = fsend[i - 1];
+	}
 }
 
 void sendDataAlarm(int signum)
 {
-    int i = lastSuccessIndex;
-    do
-    {
-        memset(&fsend[i], 0, sizeof(fsend[i]));
-        size_t num = _min(filesize, sizeof(fsend[i].buffer));
-        num = fread(fsend[i].buffer, 1, num, ff);
-        fsend[i].length = num;
-        fsend[i].seq_num = sequence;
-        sequence++;
-        fsend[i].frame_kind = SEQ;
-        fsend[i].check_sum = _checksum(fsend[i].buffer);
+	int i = lastSuccessIndex;
+	do
+	{
+		if (!success)
+		{
+			memset(&fsend[i], 0, sizeof(fsend[i]));
+			size_t num = _min(filesize, sizeof(fsend[i].buffer));
+			num = fread(fsend[i].buffer, 1, num, ff);
+			fsend[i].length = num;
+			fsend[i].seq_num = sequence;
+			sequence++;
+			fsend[i].frame_kind = SEQ;
+			fsend[i].check_sum = _checksum(fsend[i].buffer);
 
-        if (num < 1)
-            return;
-        filesize -= num;
-        int useAlarm = 1;
-        if (filesize == 0) {
-            useAlarm = 0;
-        }    
-        sendDataChunk(serverAddr, useAlarm, i);
-        printf("%d %lu %zu\n", i, filesize, num);
-        i++;
-    } while (filesize > 0 && i < N_WINDOW); // TODO asumsi filesize aman
+			if (num < 1)
+				return;
+			filesize -= num;
+		}
+		int useAlarm = 1;
+		if (filesize == 0)
+		{
+			useAlarm = 0;
+		}
+		sendDataChunk(serverAddr, useAlarm, i);
+		// printf("%d %lu %zu\n", i, filesize, num);
+		i++;
+	} while (filesize > 0 && i < N_WINDOW); // TODO asumsi filesize aman
 }
 
 int _send_files(int sock, FILE *f, struct sockaddr_in serverAddr)
 {
-    // sleep(2);
-    ff = f;
-    fseek(f, 0, SEEK_END);
-    filesize = ftell(f);
-    rewind(f);
-    if (filesize == EOF)
-        return 0;
+	// sleep(2);
+	ff = f;
+	fseek(f, 0, SEEK_END);
+	filesize = ftell(f);
+	rewind(f);
+	if (filesize == EOF)
+		return 0;
 
-    sequence = 0;
-    lastSuccessIndex = 0;
-    while (filesize > 0)
-    {
+	sequence = 0;
+	lastSuccessIndex = 0;
+	while (filesize > 0)
+	{
 
-        sendDataAlarm(1);
+		sendDataAlarm(1);
 
-        int goback = 0;
-        do
-        {
-            recvResponse(serverAddr);
-            if (!success)
-            {
-                goback = 1;
-                break;
-            }
-            slide();
-            int last = N_WINDOW - 1;
-            memset(&fsend[last], 0, sizeof(Frame));
-            size_t num = _min(filesize, sizeof(fsend[last].buffer));
-            num = fread(fsend[last].buffer, 1, num, f);
-            fsend[last].length = num;
-            fsend[last].seq_num = sequence;
-            fsend[last].frame_kind = SEQ;
-            fsend[last].check_sum = _checksum(fsend[last].buffer);
+		int goback = 0;
+		do
+		{
+			recvResponse(serverAddr);
+			if (!success)
+			{
+				goback = 1;
+				break;
+			}
+			slide();
+			int last = N_WINDOW - 1;
+			memset(&fsend[last], 0, sizeof(Frame));
+			size_t num = _min(filesize, sizeof(fsend[last].buffer));
+			num = fread(fsend[last].buffer, 1, num, f);
+			fsend[last].length = num;
+			fsend[last].seq_num = sequence;
+			fsend[last].frame_kind = SEQ;
+			fsend[last].check_sum = _checksum(fsend[last].buffer);
 
-            if (num < 1)
-                return 0;
-            sequence++;
-            sendDataChunk(serverAddr, 1, last);
-            filesize -= num;
-        } while (filesize > 0);
-        if (goback)
-        {
-            goback = 0;
-            continue;
-        }
-    }
-    memset(&fsend[0], 0, sizeof(Frame));
-    fsend[0].length = 0;
-    sendto(sock, &fsend, sizeof(Frame),
-           MSG_CONFIRM, (struct sockaddr *)&serverAddr,
-           sizeof(serverAddr));
-    return 1;
+			if (num < 1)
+				return 0;
+			sequence++;
+			sendDataChunk(serverAddr, 1, last);
+			filesize -= num;
+		} while (filesize > 0);
+		if (goback)
+		{
+			goback = 0;
+			continue;
+		}
+	}
+	memset(&fsend[0], 0, sizeof(Frame));
+	fsend[0].length = 0;
+	sendto(sock, &fsend, sizeof(Frame),
+		   MSG_CONFIRM, (struct sockaddr *)&serverAddr,
+		   sizeof(serverAddr));
+	return 1;
 }
 
 int rfLog = 0;
 int _read_file(int sock, FILE *f, struct sockaddr_in clientAddr)
 {
-    int num = 0;
-    int step = 0;
-    int filesize = 0;
-    while (1)
-    {
-        Frame fread;
-        Frame fresp;
-        socklen_t clientAddrLen = sizeof(clientAddr);
-        num = recvfrom(sock, &fread,
-                       sizeof(Frame), MSG_CONFIRM,
-                       (struct sockaddr *)&clientAddr, &clientAddrLen);
-        rfLog++;
-        printf("recv %d %d %d\n", fread.length, num, (rfLog * NET_BUF_SIZE));
-        filesize += fread.length;
-        int ack = 1;
-        int sum = _checksum(fread.buffer);
-        int isBuffer = fread.frame_kind == SEQ;
-        int sumValid = fread.check_sum == sum;
-        int debug = 1; // rand() % 100 < 50;
-        int isValid = debug && isBuffer && sumValid;
-        if (!isValid)
-        {
-            ack = 0;
-        }
-        // if (rand() % 3 < 1) {
-        //     sleep(4);
-        // }
-        fresp.ack = ack;
-        fresp.frame_kind = ACK;
-        if (0) {
-            printf("skipped\n");
-        } else {
-            sendto(sock, &fresp, sizeof(Frame), MSG_CONFIRM,
-               (struct sockaddr *)&clientAddr, clientAddrLen);
-        }
-        if (fread.length == 0)
-        {
-            printf("done %d\n", filesize);
-            return 0;
-        }
-        fwrite(&fread.buffer[0], 1, fread.length, f);
-        step++;
-    };
+	int num = 0;
+	int step = 0;
+	int filesize = 0;
+	while (1)
+	{
+		Frame fread;
+		Frame fresp;
+		socklen_t clientAddrLen = sizeof(clientAddr);
+		num = recvfrom(sock, &fread,
+					   sizeof(Frame), MSG_CONFIRM,
+					   (struct sockaddr *)&clientAddr, &clientAddrLen);
+		rfLog++;
+		printf("recv %d %d %d\n", step, num, filesize);
+		int ack = 1;
+		int sum = _checksum(fread.buffer);
+		int isBuffer = fread.frame_kind == SEQ;
+		int sumValid = fread.check_sum == sum;
+		int debug = 1; // rand() % 100 < 50;
+		int isValid = debug && isBuffer && sumValid;
+		if (!isValid)
+		{
+			ack = 0;
+		}
+		// if (rand() % 3 < 1) {
+		//     sleep(4);
+		// }
+		fresp.ack = ack;
+		fresp.frame_kind = ACK;
+		fresp.seq_num = step;
+		if (rand() % 3 < 1)
+		{
+			printf("skipped\n");
+			fread.seq_num = -1;
+		}
+		else
+		{
+			sendto(sock, &fresp, sizeof(Frame), MSG_CONFIRM,
+				   (struct sockaddr *)&clientAddr, clientAddrLen);
+		}
+		if (fread.length == 0)
+		{
+			printf("done %d\n", filesize);
+			return 0;
+		}
+		if (fread.seq_num == step)
+		{
+			fwrite(&fread.buffer[0], 1, fread.length, f);
+			step++;
+			filesize += fread.length;
+		}
+	};
 }
 
 void gbnClient(char *host, long port, FILE *fp)
 {
 
-    if ((sockfdgbn = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
-    {
-        perror("socket creation failed");
-        exit(EXIT_FAILURE);
-    }
+	if ((sockfdgbn = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
+	{
+		perror("socket creation failed");
+		exit(EXIT_FAILURE);
+	}
 
-    memset(&serverAddr, 0, sizeof(serverAddr));
+	memset(&serverAddr, 0, sizeof(serverAddr));
 
-    struct hostent *hoost = gethostbyname(host);
-    unsigned int server_address = *(unsigned long *)hoost->h_addr_list[0];
+	struct hostent *hoost = gethostbyname(host);
+	unsigned int server_address = *(unsigned long *)hoost->h_addr_list[0];
 
-    serverAddr.sin_family = AF_INET;
-    serverAddr.sin_port = htons(port);
-    serverAddr.sin_addr.s_addr = server_address;
+	serverAddr.sin_family = AF_INET;
+	serverAddr.sin_port = htons(port);
+	serverAddr.sin_addr.s_addr = server_address;
 
-    _send_files(sockfdgbn, fp, serverAddr);
+	_send_files(sockfdgbn, fp, serverAddr);
 
-    close(sockfdgbn);
+	close(sockfdgbn);
 }
 
 void gbnServer(char *iface, long port, FILE *fp)
 {
 
-    int sockfd;
-    struct sockaddr_in servaddr, cliaddr;
+	int sockfd;
+	struct sockaddr_in servaddr, cliaddr;
 
-    if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
-    {
-        perror("socket creation failed");
-        exit(EXIT_FAILURE);
-    }
+	if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
+	{
+		perror("socket creation failed");
+		exit(EXIT_FAILURE);
+	}
 
-    memset(&servaddr, 0, sizeof(servaddr));
-    memset(&cliaddr, 0, sizeof(cliaddr));
+	memset(&servaddr, 0, sizeof(servaddr));
+	memset(&cliaddr, 0, sizeof(cliaddr));
 
-    servaddr.sin_family = AF_INET; // IPv4
-    servaddr.sin_addr.s_addr = INADDR_ANY;
-    servaddr.sin_port = htons(port);
+	servaddr.sin_family = AF_INET; // IPv4
+	servaddr.sin_addr.s_addr = INADDR_ANY;
+	servaddr.sin_port = htons(port);
 
-    if (bind(sockfd, (const struct sockaddr *)&servaddr,
-             sizeof(servaddr)) < 0)
-    {
-        perror("bind failed");
-        exit(EXIT_FAILURE);
-    }
+	if (bind(sockfd, (const struct sockaddr *)&servaddr,
+			 sizeof(servaddr)) < 0)
+	{
+		perror("bind failed");
+		exit(EXIT_FAILURE);
+	}
 
-    _read_file(sockfd, fp, servaddr);
+	_read_file(sockfd, fp, servaddr);
 }
 
 void gbn_server(char *iface, long port, FILE *fp)
 {
-    gbnServer(iface, port, fp);
+	gbnServer(iface, port, fp);
 }
 
 void gbn_client(char *host, long port, FILE *fp)
 {
-    signal(SIGALRM, sendDataAlarm);
-    gbnClient(host, port, fp);
+	signal(SIGALRM, sendDataAlarm);
+	gbnClient(host, port, fp);
 }
