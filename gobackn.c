@@ -13,33 +13,11 @@
 #include <signal.h>
 #include <errno.h>
 
-#define NET_BUF_SIZE 200
+#define NET_BUF_SIZE 256
 #define N_WINDOW 5
 #ifndef MSG_CONFIRM
 #define MSG_CONFIRM 0
 #endif
-
-int msleep(long msec)
-{
-	struct timespec ts;
-	int res;
-
-	if (msec < 0)
-	{
-		errno = EINVAL;
-		return -1;
-	}
-
-	ts.tv_sec = msec / 10;
-	ts.tv_nsec = (msec % 10) * 1000000;
-
-	do
-	{
-		res = nanosleep(&ts, &ts);
-	} while (res && errno == EINTR);
-
-	return res;
-}
 typedef struct frame
 {
 	char buffer[NET_BUF_SIZE];
@@ -63,268 +41,231 @@ FILE *ff;
 Frame fsend[N_WINDOW];
 Frame fresp;
 struct sockaddr_in serverAddr;
-int recvResponse(struct sockaddr_in serverAddr)
+void alarmHandlerData(int signum, struct sockaddr_in serverAddr)
 {
-	socklen_t serverAddrLen = sizeof(serverAddr);
-	struct timeval tv;
-	tv.tv_sec = 1;
-	tv.tv_usec = 0;
-	if (setsockopt(sockfdgbn, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
-	{
-		perror("Error");
-	}
-	recvfrom(sockfdgbn, &fresp, sizeof(Frame), MSG_CONFIRM,
-			 (struct sockaddr *)&serverAddr, &serverAddrLen);
-	success = fresp.ack && fresp.frame_kind == ACK && fresp.seq_num == sequence;
-	printf("success %d %d %d %d\n", fresp.ack, fresp.frame_kind == ACK, fresp.seq_num, success);
-	// printf("got sec %d success %d\n", fresp.seq_num, success);
-	if (success)
-	{
-		lastSuccessIndex = fresp.seq_num;
-		if (lastSuccessIndex == 4) {
-			lastSuccessIndex = 0;
-		}
-	}
-	return success;
+    socklen_t serverAddrLen = sizeof(serverAddr);
+    if (signum != 1)
+    {
+        printf("triggered out of 1 %d\n", signum);
+    }
+    struct timeval tv;
+    tv.tv_sec = 1;
+    tv.tv_usec = 0;
+    if (setsockopt(sockfdgbn, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
+    {
+        perror("Error");
+    }
+    sendto(sockfdgbn, &fsend[0], sizeof(Frame),
+                       MSG_CONFIRM, (struct sockaddr *)&serverAddr,
+                       serverAddrLen);
+    printf("sent packet size %d\n", fsend[0].length);
+    recvfrom(sockfdgbn, &fresp, sizeof(Frame), MSG_CONFIRM,
+             (struct sockaddr *)&serverAddr, &serverAddrLen);
+    success = fresp.ack == 1 && fresp.frame_kind == ACK;
 }
 
-int sdcLog = 0;
-void sendDataChunk(struct sockaddr_in serverAddr, int useAlarm, int i)
+int check_sum(char buffer[NET_BUF_SIZE])
 {
-	socklen_t serverAddrLen = sizeof(serverAddr);
-	if (useAlarm)
-		alarm(1);
-	int dapet = sendto(sockfdgbn, &fsend[i], sizeof(Frame),
-					   MSG_CONFIRM, (struct sockaddr *)&serverAddr,
-					   serverAddrLen);
-	// msleep(1);
-	sdcLog++;
-	// printf("sent %d %zu %d\n", dapet, time(NULL), (sdcLog * NET_BUF_SIZE));
-	dapet++;
-	if (useAlarm)
-	{
-		recvResponse(serverAddr);
-	}
+    int sum = 0;
+    for (int i = 0; i < NET_BUF_SIZE; i++)
+    {
+        sum += buffer[i];
+    }
+    return sum;
 }
 
-int _checksum(char buffer[NET_BUF_SIZE])
+int ming(int a, int b)
 {
-	int sum = 0;
-	for (int i = 0; i < NET_BUF_SIZE; i++)
-	{
-		sum += buffer[i];
-	}
-	return sum;
+    if (a < b)
+        return a;
+    return b;
 }
 
-int _min(int a, int b)
+int sendFiles(int sock, FILE *f, struct sockaddr_in serverAddr)
 {
-	if (a < b)
-		return a;
-	return b;
+    // sleep(2);
+    fseek(f, 0, SEEK_END);
+    long filesize = ftell(f);
+    rewind(f);
+    if (filesize == EOF)
+        return 0;
+
+    int step = 0;
+    if (filesize > 0)
+    {
+        do
+        {
+            memset(&fsend[0], 0, sizeof(fsend[0]));
+            memset(&fresp, 0, sizeof(fresp));
+            success = 0;
+            int attempt = 0;
+            char buffer[NET_BUF_SIZE];
+            size_t num = ming(filesize, sizeof(buffer));
+            num = fread(fsend[0].buffer, 1, num, f);
+            fsend[0].length = num;
+            fsend[0].seq_num = step;
+            fsend[0].frame_kind = SEQ;
+            fsend[0].check_sum = check_sum(fsend[0].buffer);
+
+            if (num < 1)
+                return 0;
+            step++;
+            while (!success)
+            {
+                alarmHandlerData(1, serverAddr);
+                attempt++;
+                if (attempt > 1)
+                {
+                    printf("step %d done in %dth time\n", step, attempt);
+                }
+            }
+            filesize -= num;
+        } while (filesize > 0);
+    }
+    memset(&fsend[0], 0, sizeof(Frame));
+    fsend[0].length = 0;
+    sendto(sock, &fsend[0], sizeof(Frame),
+           MSG_CONFIRM, (struct sockaddr *)&serverAddr,
+           sizeof(serverAddr));
+    return 1;
 }
 
-void slide()
+int readfileg(int sock, FILE *f, struct sockaddr_in clientAddr)
 {
-	for (int i = 1; i < N_WINDOW; i++)
-	{
-		fsend[i] = fsend[i - 1];
-	}
-}
-
-void sendDataAlarm(int signum)
-{
-	int i = lastSuccessIndex;
-	do
-	{
-		if (!success)
-		{
-			memset(&fsend[i], 0, sizeof(fsend[i]));
-			size_t num = _min(filesize, sizeof(fsend[i].buffer));
-			num = fread(fsend[i].buffer, 1, num, ff);
-			fsend[i].length = num;
-			fsend[i].seq_num = sequence;
-			sequence++;
-			fsend[i].frame_kind = SEQ;
-			fsend[i].check_sum = _checksum(fsend[i].buffer);
-
-			if (num < 1)
-				return;
-			filesize -= num;
-		}
-		int useAlarm = 1;
-		if (filesize == 0)
-		{
-			useAlarm = 0;
-		}
-		sendDataChunk(serverAddr, useAlarm, i);
-		// printf("%d %lu %zu\n", i, filesize, num);
-		i++;
-	} while (filesize > 0 && i < N_WINDOW); // TODO asumsi filesize aman
-}
-
-int _send_files(int sock, FILE *f, struct sockaddr_in serverAddr)
-{
-	// sleep(2);
-	ff = f;
-	fseek(f, 0, SEEK_END);
-	filesize = ftell(f);
-	rewind(f);
-	if (filesize == EOF)
-		return 0;
-
-	sequence = 0;
-	lastSuccessIndex = 0;
-	while (filesize > 0)
-	{
-
-		sendDataAlarm(1);
-
-		int goback = 0;
-		do
-		{
-			recvResponse(serverAddr);
-			if (!success)
-			{
-				goback = 1;
-				break;
-			}
-			slide();
-			int last = N_WINDOW - 1;
-			memset(&fsend[last], 0, sizeof(Frame));
-			size_t num = _min(filesize, sizeof(fsend[last].buffer));
-			num = fread(fsend[last].buffer, 1, num, f);
-			fsend[last].length = num;
-			fsend[last].seq_num = sequence;
-			fsend[last].frame_kind = SEQ;
-			fsend[last].check_sum = _checksum(fsend[last].buffer);
-
-			if (num < 1)
-				return 0;
-			sequence++;
-			sendDataChunk(serverAddr, 1, last);
-			filesize -= num;
-		} while (filesize > 0);
-		if (goback)
-		{
-			goback = 0;
-			continue;
-		}
-	}
-	memset(&fsend[0], 0, sizeof(Frame));
-	fsend[0].length = 0;
-	sendto(sock, &fsend, sizeof(Frame),
-		   MSG_CONFIRM, (struct sockaddr *)&serverAddr,
-		   sizeof(serverAddr));
-	return 1;
-}
-
-int rfLog = 0;
-int _read_file(int sock, FILE *f, struct sockaddr_in clientAddr)
-{
-	int num = 0;
-	int step = 0;
-	int filesize = 0;
-	while (1)
-	{
-		Frame fread;
-		Frame fresp;
-		socklen_t clientAddrLen = sizeof(clientAddr);
-		num = recvfrom(sock, &fread,
-					   sizeof(Frame), MSG_CONFIRM,
-					   (struct sockaddr *)&clientAddr, &clientAddrLen);
-		rfLog++;
-		printf("recv %d %d %d\n", step, num, filesize);
-		int ack = 1;
-		int sum = _checksum(fread.buffer);
-		int isBuffer = fread.frame_kind == SEQ;
-		int sumValid = fread.check_sum == sum;
-		int debug = 1; // rand() % 100 < 50;
-		int isValid = debug && isBuffer && sumValid;
-		if (!isValid)
-		{
-			ack = 0;
-		}
-		// if (rand() % 3 < 1) {
-		//     sleep(4);
-		// }
-		fresp.ack = ack;
-		fresp.frame_kind = ACK;
-		fresp.seq_num = step;
-		if (rand() % 3 < 1)
-		{
+    int num = 0;
+    int step = 0;
+    while (1)
+    {
+        Frame fread;
+        Frame fresponse;
+        socklen_t clientAddrLen = sizeof(clientAddr);
+        num = recvfrom(sock, &fread,
+                       sizeof(Frame), MSG_CONFIRM,
+                       (struct sockaddr *)&clientAddr, &clientAddrLen);
+        printf("recv packet size %d\n", fread.length);
+        int ack = 1;
+        int sum = check_sum(fread.buffer);
+        int isBuffer = fread.frame_kind == SEQ;
+        int sumValid = fread.check_sum == sum;
+        int debug = 1; // rand() % 100 < 50;
+        int isValid = debug && isBuffer && sumValid;
+        if (!isValid)
+        {
+            ack = 0;
+        }
+        fresponse.ack = ack;
+        fresponse.frame_kind = ACK;
+        if (0)
+        {
+            fread.seq_num = -1;
 			printf("skipped\n");
-			fread.seq_num = -1;
-		}
-		else
-		{
-			sendto(sock, &fresp, sizeof(Frame), MSG_CONFIRM,
-				   (struct sockaddr *)&clientAddr, clientAddrLen);
-		}
-		if (fread.length == 0)
-		{
-			printf("done %d\n", filesize);
-			return 0;
-		}
-		if (fread.seq_num == step)
-		{
-			fwrite(&fread.buffer[0], 1, fread.length, f);
-			step++;
-			filesize += fread.length;
-		}
-	};
+        }
+        else
+        {
+            sendto(sock, &fresponse, sizeof(Frame), MSG_CONFIRM,
+                   (struct sockaddr *)&clientAddr, clientAddrLen);
+        }
+
+        if (fread.length == 0)
+        {
+            return 0;
+        }
+        if (step == fread.seq_num)
+        {
+            fwrite(&fread.buffer[0], 1, fread.length, f);
+            step++;
+        }
+    };
 }
 
 void gbnClient(char *host, long port, FILE *fp)
 {
 
-	if ((sockfdgbn = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
-	{
-		perror("socket creation failed");
-		exit(EXIT_FAILURE);
-	}
+    // char buffer[NET_BUF_SIZE];
+    // char *hello = "Hello from client";
+    struct sockaddr_in servaddr;
 
-	memset(&serverAddr, 0, sizeof(serverAddr));
+    // Creating socket file descriptor
+    if ((sockfdgbn = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
+    {
+        perror("socket creation failed");
+        exit(EXIT_FAILURE);
+    }
 
-	struct hostent *hoost = gethostbyname(host);
-	unsigned int server_address = *(unsigned long *)hoost->h_addr_list[0];
+    memset(&servaddr, 0, sizeof(servaddr));
 
-	serverAddr.sin_family = AF_INET;
-	serverAddr.sin_port = htons(port);
-	serverAddr.sin_addr.s_addr = server_address;
+    struct hostent *hoost = gethostbyname(host);
+    unsigned int server_address = *(unsigned long *)hoost->h_addr_list[0];
 
-	_send_files(sockfdgbn, fp, serverAddr);
+    // Filling server information
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_port = htons(port);
+    servaddr.sin_addr.s_addr = server_address;
 
-	close(sockfdgbn);
+    // int n, len;
+
+    // sendto(sockfd, (const char *)hello, strlen(hello),
+    // 	MSG_CONFIRM, (const struct sockaddr *) &servaddr,
+    // 		sizeof(servaddr));
+    // printf("Hello message sent.\n");
+
+    // n = recvfrom(sockfd, (char *)buffer, NET_BUF_SIZE,
+    // 			MSG_WAITALL, (struct sockaddr *) &servaddr,
+    // 			&len);
+    // buffer[n] = '\0';
+    // printf("Server : %s\n", buffer);
+
+    sendFiles(sockfdgbn, fp, servaddr);
+
+    close(sockfdgbn);
 }
 
 void gbnServer(char *iface, long port, FILE *fp)
 {
 
-	int sockfd;
-	struct sockaddr_in servaddr, cliaddr;
+    int sockfd;
+    // char buffer[NET_BUF_SIZE];
+    // char *hello = "Hello from server";
+    struct sockaddr_in servaddr, cliaddr;
 
-	if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
-	{
-		perror("socket creation failed");
-		exit(EXIT_FAILURE);
-	}
+    // Creating socket file descriptor
+    if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
+    {
+        perror("socket creation failed");
+        exit(EXIT_FAILURE);
+    }
 
-	memset(&servaddr, 0, sizeof(servaddr));
-	memset(&cliaddr, 0, sizeof(cliaddr));
+    memset(&servaddr, 0, sizeof(servaddr));
+    memset(&cliaddr, 0, sizeof(cliaddr));
 
-	servaddr.sin_family = AF_INET; // IPv4
-	servaddr.sin_addr.s_addr = INADDR_ANY;
-	servaddr.sin_port = htons(port);
+    // Filling server information
+    servaddr.sin_family = AF_INET; // IPv4
+    servaddr.sin_addr.s_addr = INADDR_ANY;
+    servaddr.sin_port = htons(port);
 
-	if (bind(sockfd, (const struct sockaddr *)&servaddr,
-			 sizeof(servaddr)) < 0)
-	{
-		perror("bind failed");
-		exit(EXIT_FAILURE);
-	}
+    // Bind the socket with the server address
+    if (bind(sockfd, (const struct sockaddr *)&servaddr,
+             sizeof(servaddr)) < 0)
+    {
+        perror("bind failed");
+        exit(EXIT_FAILURE);
+    }
 
-	_read_file(sockfd, fp, servaddr);
+    // int n;
+    // int len;
+
+    // len = sizeof(cliaddr); //len is value/result
+
+    // n = recvfrom(sockfd, (char *)buffer, NET_BUF_SIZE,
+    // 			MSG_WAITALL, ( struct sockaddr *) &cliaddr,
+    // 			&len);
+    // buffer[n] = '\0';
+    // printf("Client : %s\n", buffer);
+    // sendto(sockfd, (const char *)hello, strlen(hello),
+    // 	MSG_CONFIRM, (const struct sockaddr *) &cliaddr,
+    // 		len);
+    // printf("Hello message sent.\n");
+    readfileg(sockfd, fp, servaddr);
 }
 
 void gbn_server(char *iface, long port, FILE *fp)
@@ -334,6 +275,6 @@ void gbn_server(char *iface, long port, FILE *fp)
 
 void gbn_client(char *host, long port, FILE *fp)
 {
-	signal(SIGALRM, sendDataAlarm);
+	// signal(SIGALRM, sendDataAlarm);
 	gbnClient(host, port, fp);
 }
